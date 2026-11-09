@@ -72,10 +72,13 @@ async def main():
         j = await r.json(); print("story:", j); assert j["url"].startswith("https://example.com/cards/")
         name = j["url"].rsplit("/", 1)[1]
         r = await c.get(f"/cards/{name}"); assert r.status == 200 and len(await r.read()) > 50000
-        r = await c.get("/dl/" + name); assert r.status == 200 and "attachment" in r.headers.get("Content-Disposition", ""), r.headers
+        r = await c.get("/dl/" + name); assert r.status == 200 and "attachment" in r.headers.get("Content-Disposition", "")
         # План на следующий год: чужие ключи отбрасываются, максимум 3
         r = await c.post("/api/plan", json={"init": sign({"id": 5, "first_name": "Ваня"}),
+                                           "goals": ["travel", "hack", "love", "love", "sport", "read"]})
+        j = await r.json(); print("plan:", j); assert j["goals"] == ["travel", "love", "sport"]
         r = await c.post("/api/start", json={"init": sign({"id": 5, "first_name": "Ваня"})})
+        p = (await r.json())["data"]["plan"]; assert p["chosen"] == ["travel", "love", "sport"] and len(p["catalog"]) == 12
         assert d["age"]["earlier"] >= 90 and d["age"]["users_now"] > 1000, d["age"]
     print("caption:\n" + share.caption(d))
     await db.close_db()
