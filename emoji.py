@@ -93,7 +93,8 @@ def _forms(plain: str) -> set[str]:
 
 
 def on() -> bool:
-    return _allowed and bool(PACK) and config.PREMIUM_EMOJI_ON
+    # Хватит любого пака: уточек (свой) или иконок (готовый, например tgiosicons).
+    return _allowed and bool(PACK or ICONS) and config.PREMIUM_EMOJI_ON
 
 
 def status() -> str:
@@ -130,8 +131,10 @@ async def load_icons(bot: Any, names: list[str] | str) -> int:
                 for form in _forms(one.emoji):
                     found.setdefault(form, one.custom_emoji_id)
         log.info("пак иконок «%s»: %s шт.", name, len(got.stickers or []))
+    global _pattern
     ICONS.clear()
     ICONS.update(found)
+    _pattern = None
     return len(found)
 
 
@@ -171,10 +174,15 @@ def icon(plain: str) -> str | None:
     return PACK.get(plain) if on() else None
 
 
+def _all() -> dict[str, str]:
+    """Эмодзи для текста: уточки главнее, иконки из готовых паков — где уточки нет."""
+    return {**ICONS, **PACK}
+
+
 def _regex() -> re.Pattern | None:
     global _pattern
-    if _pattern is None and PACK:
-        keys = sorted(PACK, key=len, reverse=True)
+    if _pattern is None and (PACK or ICONS):
+        keys = sorted(_all(), key=len, reverse=True)
         _pattern = re.compile("|".join(re.escape(k) for k in keys))
     return _pattern
 
@@ -185,7 +193,8 @@ def dress(text: str | None) -> str | None:
     rx = _regex()
     if rx is None:
         return text
-    return rx.sub(lambda m: TAG.format(id=PACK[m.group(0)], emoji=m.group(0)), text)
+    table = _all()
+    return rx.sub(lambda m: TAG.format(id=table[m.group(0)], emoji=m.group(0)), text)
 
 
 def strip(text: str | None) -> str | None:
@@ -277,7 +286,7 @@ def strip_styles(method: Any) -> bool:
 
 def strip_buttons(method: Any) -> bool:
     """Снять премиум-иконки с кнопок. Цвет (синяя/зелёная) при этом остаётся."""
-    back = {v: k for k, v in PACK.items()}
+    back = {v: k for k, v in {**ICONS, **PACK}.items()}
     touched = False
     for button in _buttons(method):
         icon_id = getattr(button, "icon_custom_emoji_id", None)
