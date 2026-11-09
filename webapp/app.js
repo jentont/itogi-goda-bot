@@ -623,7 +623,7 @@
     const avatar = d.user.photo
       ? `<div class="avatar-wrap"><img class="avatar" src="${esc(d.user.photo)}" alt=""></div>`
       : `<div class="avatar-letter">${esc((d.user.name || "?").slice(0, 1).toUpperCase())}</div>`;
-    S.push({
+    S.push({ key: "intro",
       theme: "festive",
       html: `${pill(`ИТОГИ ${d.year}`)}
         <div class="hero">${avatar}<div class="corner-duck"><div class="lottie" data-sticker="039"></div></div></div>
@@ -634,7 +634,7 @@
 
     // 2. Возраст аккаунта
     const a = d.age;
-    S.push({
+    S.push({ key: "age",
       theme: "blue",
       html: `${pill(`${ic("031")}В TELEGRAM С ${esc(a.since).toUpperCase()}`)}
         ${hero("031")}
@@ -647,7 +647,7 @@
     // 2а. Тогда и сейчас — сколько людей было в Telegram, когда ты пришёл
     if (a.users_now) {
       const early = a.earlier || 0;
-      S.push({
+      S.push({ key: "shock",
         theme: early >= 50 ? "dark" : "ice",
         html: `${pill(`${ic("004")}ДЕРЖИСЬ КРЕПЧЕ`)}
           ${hero("004")}
@@ -663,7 +663,7 @@
     // 2б. День рождения
     const bd = d.bday;
     if (bd && d.birthday) {
-      S.push({
+      S.push({ key: "bday",
         theme: "orange",
         html: `${pill(`${ic("039")}ДЕНЬ РОЖДЕНИЯ`)}
           ${hero("024")}
@@ -679,7 +679,7 @@
 
     // 3. Premium
     if (d.premium) {
-      S.push({
+      S.push({ key: "premium",
         theme: "gold",
         html: `${pill(`${ic("010")}TELEGRAM PREMIUM`)}
           ${hero("010")}
@@ -689,7 +689,7 @@
         spark: [0.82, 0.18],
       });
     } else {
-      S.push({
+      S.push({ key: "premium",
         theme: "teal",
         html: `${pill(`${ic("010")}TELEGRAM PREMIUM`)}
           ${hero("012")}
@@ -704,7 +704,7 @@
     if (p) {
       const checks = [p.photos > 0, p.bio, p.status, !!p.channel, !!d.user.username || p.usernames > 0];
       const fill = Math.round(100 * checks.filter(Boolean).length / checks.length);
-      S.push({
+      S.push({ key: "profile",
         theme: "teal",
         html: `${pill(`${ic("027")}ТВОЙ ПРОФИЛЬ`)}
           <div class="hero hero-sm"><div class="lottie" data-sticker="027"></div></div>
@@ -726,7 +726,7 @@
     const g = d.gifts;
     if (g && g.now > 0) {
       const month = g.best_month ? `<div class="cap">Больше всего подарков пришло в ${esc(g.best_month.name)} — ${g.best_month.count}</div>` : "";
-      S.push({
+      S.push({ key: "gifts",
         theme: "pink",
         html: `${pill(`${ic("018")}ПОДАРКИ ГОДА`)}
           ${hero("018")}
@@ -748,7 +748,7 @@
       if (peak > 0) {
         const bars = months.map((n, i) => `
           <div class="bar${n === peak ? " peak" : ""}"><em>${n || ""}</em><i data-h="${Math.max(4, (n / peak) * 100)}" style="transition-delay:${i * 45}ms"></i><span>${MONTH_LETTERS[i]}</span></div>`).join("");
-        S.push({
+        S.push({ key: "months",
           theme: "purple",
           html: `${pill(`${ic("017")}ПОДАРКИ ПО МЕСЯЦАМ`)}
             <div class="hero hero-sm"><div class="lottie" data-sticker="017"></div></div>
@@ -766,7 +766,7 @@
       // 4в. Кто дарит
       if (g.top_sender || g.hidden) {
         const ts = g.top_sender;
-        S.push({
+        S.push({ key: "senders",
           theme: "red",
           html: `${pill(`${ic("024")}КТО ТЕБЯ ЛЮБИТ`)}
             <div class="hero hero-sm"><div class="lottie" data-sticker="024"></div></div>
@@ -784,7 +784,7 @@
       // с Fragment — как в mogbattle.
       const w = d.worth || { total: g.value || 0, gifts: g.value || 0, names: 0, rub: g.rub || 0, usd: 0 };
       const names = (d.nft_names || []).map((n) => "@" + esc(n.name)).join(", ");
-      S.push({
+      S.push({ key: "worth",
         theme: "gold",
         html: `${pill(`${ic("030")}СТОИМОСТЬ ПРОФИЛЯ`)}
           <div class="hero hero-sm"><div class="lottie" data-sticker="030"></div></div>
@@ -802,7 +802,7 @@
 
       const top = g.top;
       if (top && top.sticker) {
-        S.push({
+        S.push({ key: "top",
           theme: top.colors || "purple",
           html: `${pill(`${ic("039")}${top.nft ? "ЛУЧШИЙ ПОДАРОК · NFT" : "ЛУЧШИЙ ПОДАРОК"}`)}
             ${hero("g:" + top.sticker)}
@@ -815,7 +815,7 @@
         });
       }
     } else if (g) {
-      S.push({
+      S.push({ key: "nogifts",
         theme: "pink",
         html: `${pill(`${ic("018")}ПОДАРКИ ГОДА`)}
           ${hero("006")}
@@ -828,7 +828,7 @@
     const r = d.rating;
     if (r && r.level) {
       const nextLine = r.next ? `<div class="meter-row"><span>ещё ${fmt(r.left)} до уровня ${r.level + 1}</span><span>${Math.round(r.progress * 100)}%</span></div>` : `<div class="meter-row"><span>Максимум!</span><span>100%</span></div>`;
-      S.push({
+      S.push({ key: "level",
         theme: "purple",
         html: `${pill(`${ic("032")}УРОВЕНЬ В TELEGRAM`)}
           ${hero("032", `<div class="badge-level">${r.level}</div>`)}
@@ -848,7 +848,7 @@
     }
 
     // 6. Место
-    S.push({
+    S.push({ key: "rank",
       theme: "green",
       html: `${pill(`${ic("029")}ТЫ НЕ ОДИН`)}
         ${hero("029")}
@@ -860,7 +860,7 @@
 
     // 6б. Прямо сейчас
     const m = momentNow();
-    S.push({
+    S.push({ key: "moment",
       theme: m.part[2],
       html: `${pill(`${ic("027")}ПРЯМО СЕЙЧАС`)}
         ${hero(m.part[1])}
@@ -883,11 +883,12 @@
       voice: { theme: "teal", title: "Подкастер года", text: (n) => `Минут голосовых — это ${Math.max(1, Math.round(n / 60))} ч. Целый сезон подкаста` },
       read: { theme: "blue", title: "Прочитал(-а) и забыл(-а)", text: () => "Две синие галочки — твоя суперсила. Ответ уже в пути. Наверное" },
     };
+    const FUN_KEEP = new Set(["ignore", "fast", "read"]);
     (d.fun || []).forEach((f) => {
       const m = FUN[f.key];
-      if (!m) return;
+      if (!m || !FUN_KEEP.has(f.key)) return;
       const num = typeof f.value === "number";
-      S.push({
+      S.push({ key: "fun",
         theme: m.theme,
         html: `${pill(`${ic("037")}ПО ВЕРСИИ УТОЧЕК`)}
           ${hero(f.sticker)}
@@ -902,10 +903,10 @@
     });
 
     // 7. Номинации
-    d.nominations.forEach((n, i) => {
-      S.push({
+    d.nominations.slice(0, 1).forEach((n, i) => {
+      S.push({ key: "nom",
         theme: n.theme,
-        html: `${pill(`${ic("028")}НОМИНАЦИЯ ГОДА · ${i + 1}/${d.nominations.length}`)}
+        html: `${pill(`${ic("028")}НОМИНАЦИЯ ГОДА`)}
           ${hero(n.sticker, '<div class="trophy-ring"></div>')}
           <div class="cap" style="margin-top:0">Уточки посовещались и присудили тебе</div>
           <h2 class="gold" style="font-size:clamp(28px,8.6vw,40px)">${esc(n.title)}</h2>
@@ -915,7 +916,7 @@
     });
 
     // 8. Предсказание
-    S.push({
+    S.push({ key: "prediction",
       theme: "night",
       html: `${pill(`${ic("025")}ПРЕДСКАЗАНИЕ НА ${d.year + 1}`)}
         ${hero("005")}
@@ -933,7 +934,7 @@
     const byKey = {};
     if (plan) plan.catalog.forEach((goal) => (byKey[goal.key] = goal));
     if (plan && plan.last && plan.last.length) {
-      S.push({
+      S.push({ key: "lastplan",
         theme: "green",
         html: `${pill(`${ic("031")}ТВОЙ ПЛАН НА ${d.year}`)}
           ${hero("003")}
@@ -947,7 +948,7 @@
     if (plan) {
       const chips = plan.catalog.map((goal) => `
         <button class="goal js-goal${plan.chosen.includes(goal.key) ? " on" : ""}" data-k="${goal.key}">${ic(goal.sticker)}<span>${esc(goal.title)}</span></button>`).join("");
-      S.push({
+      S.push({ key: "plan",
         theme: "festive",
         html: `${pill(`${ic("030")}ПЛАН НА ${plan.year}`)}
           <h2 style="margin-top:12px">Что берём в ${plan.year}?</h2>
@@ -973,7 +974,7 @@
       `<div class="w wide w-nom">${ic(d.nominations[0].sticker)}<div class="w-col"><div class="w-sub">главная номинация</div><b class="gold">${esc(d.nominations[0].title)}</b></div></div>`,
       `<div class="w wide js-plan-cell"${plan && plan.chosen.length ? "" : " hidden"}>${planCell(d)}</div>`,
     ].join("");
-    S.push({
+    S.push({ key: "final",
       theme: "festive",
       final: true,
       html: `${pill(`С НАСТУПАЮЩИМ ${d.year + 1}!`)}
@@ -992,7 +993,10 @@
       enter: () => { fx.confetti(180); haptic("success"); },
       spark: [0.85, 0.2],
     });
-    return S;
+    // Только самое цепляющее: длинные итоги не досматривают до финала.
+    const KEEP = new Set(["intro", "shock", "gifts", "nogifts", "senders", "worth", "top", "level",
+      "fun", "nom", "prediction", "lastplan", "plan", "final"]);
+    return S.filter((s) => KEEP.has(s.key));
   }
 
   let SLIDES = [];
