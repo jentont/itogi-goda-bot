@@ -32,18 +32,47 @@ def _sticker(file: str, plain: str, folder=None) -> InputSticker:
     )
 
 
-async def _retry(call, notify: Notify, tries: int = 4):
-    """Вызов Bot API, который на флуд-контроле сам ждёт и пробует снова."""
-    for attempt in range(tries):
+#: Когда Telegram разрешит следующую попытку (unix-время) — хранится в базе,
+#: чтобы передеплой не стучался раньше срока и не продлевал ограничение.
+KEY_NEXT = "pack_next_try"
+
+
+async def wait_left() -> int:
+    """Сколько секунд ещё ждать до разрешённой попытки (0 — можно)."""
+    import time
+
+    import db
+
+    raw = await db.get_setting(KEY_NEXT)
+    return max(0, int(float(raw) - time.time())) if raw else 0
+
+
+async def _hold_until_allowed() -> None:
+    left = await wait_left()
+    if left:
+        log.info("пак: Telegram разрешит попытку через %s сек — жду, не стучусь раньше", left)
+        await asyncio.sleep(left + 2)
+
+
+async def _retry(call, notify: Notify):
+    """Вызов Bot API с терпением: на флуд-контроле ждём ровно сколько сказал
+    Telegram (запоминаем срок в базе) и повторяем, пока не получится."""
+    import time
+
+    import db
+
+    while True:
+        await _hold_until_allowed()
         try:
-            return await call()
+            result = await call()
+            await db.set_setting(KEY_NEXT, None)
+            return result
         except TelegramRetryAfter as wait:
-            if attempt == tries - 1:
-                raise
+            await db.set_setting(KEY_NEXT, str(time.time() + wait.retry_after))
             if notify:
-                await notify(f"⏳ Telegram просит подождать {wait.retry_after} сек — дособеру пак сам.")
+                await notify(f"⏳ Telegram разрешит через {wait.retry_after // 60 + 1} мин — дособеру пак сам "
+                             "и пришлю ссылку. Ничего нажимать не нужно.")
             log.info("флуд-контроль, жду %s сек", wait.retry_after)
-            await asyncio.sleep(wait.retry_after + 2)
 
 
 #: Один пак — одна сборка за раз. Две одновременные (автосборка при запуске и

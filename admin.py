@@ -699,7 +699,17 @@ async def make_pack(event, bot: Bot) -> None:
         await event.answer()
     me = await bot.me()
     name = emoji.pack_name(me.username)
-    status = await reply.answer(f"🦆 Собираю пак из {len(emoji.PACK_ITEMS)} эмодзи…")
+    icons = emoji.icons_name(me.username)
+    # Уже собирается или Telegram велел ждать — не шлём новых запросов
+    # (каждый лишний продлевает ограничение), только говорим, сколько осталось.
+    left = await pack.wait_left()
+    if pack.busy(name) or pack.busy(icons) or left:
+        mins = left // 60 + 1 if left else None
+        await reply.answer(
+            "⏳ Пак уже собирается" + (f" — Telegram разрешит через ~{mins} мин" if mins else "")
+            + ". Пришлю ссылки сам, как будет готово. Нажимать ничего не нужно.")
+        return
+    status = await reply.answer(f"🦆 Собираю паки: {len(emoji.PACK_ITEMS)} уточек и {len(emoji.ICON_ITEMS)} иконок…")
 
     async def notify(text: str) -> None:
         try:
@@ -707,19 +717,22 @@ async def make_pack(event, bot: Bot) -> None:
         except Exception:
             pass
 
-    try:
-        count = await pack.ensure(bot, name, user.id, notify)
-        icons = emoji.icons_name(me.username)
-        await pack.ensure(bot, icons, user.id, notify, icons=True)
-        await emoji.load_icons(bot, icons)
-    except Exception as error:
-        await status.edit_text(f"❌ Пак не собрался: {html.escape(str(error))}\n\n"
-                               "Чтобы бот мог создать пак, напиши ему /start со своего аккаунта.")
-        return
-    await db.set_setting("emoji_pack", name)
-    loaded = await emoji.load(bot, name)
-    await status.edit_text(f"✅ Готово, {count} эмодзи: https://t.me/addemoji/{name}\n{html.escape(loaded)}",
-                           disable_web_page_preview=True)
+    async def run() -> None:
+        try:
+            count = await pack.ensure(bot, name, user.id, notify)
+            await db.set_setting("emoji_pack", name)
+            await emoji.load(bot, name)
+            await pack.ensure(bot, icons, user.id, notify, icons=True)
+            await emoji.load_icons(bot, icons)
+        except Exception as error:
+            await notify(f"❌ Пак не собрался: {html.escape(str(error))}\n\n"
+                         "Чтобы бот мог создать пак, напиши ему /start со своего аккаунта.")
+            return
+        await notify(f"✅ Готово, {count} уточек:\nhttps://t.me/addemoji/{name}\n"
+                     f"Иконки кнопок:\nhttps://t.me/addemoji/{icons}")
+
+    # В фоне: ожидание Telegram может длиться минуты, админка не должна висеть.
+    asyncio.create_task(run())
 
 
 @router.callback_query(F.data == "a:rl")
