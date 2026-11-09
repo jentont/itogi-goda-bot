@@ -73,6 +73,8 @@ ASSETS = ROOT / "assets"
 WEBAPP_DIR = ROOT / "webapp"
 FONTS = ASSETS / "fonts"
 TGS_DIR = ASSETS / "tgs"
+#: Белые иконки кнопок (tools/icons.py) — отдельный пак, перекрашивается под тему.
+ICONS_DIR = ASSETS / "icons"
 
 #: Примерная цена одной звезды в рублях — для «коллекция стоит ≈ N ₽».
 STAR_RUB = float(os.getenv("STAR_RUB", "1.8"))

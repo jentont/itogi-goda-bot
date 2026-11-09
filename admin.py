@@ -64,8 +64,8 @@ def B(text: str, data: str, **kw) -> InlineKeyboardButton:
 def panel_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [B("📢 Спонсоры", "a:sp")],
-        [B("📊 Статистика", "a:stats"), B("📨 Рассылка", "a:post")],
-        [B("🦆 Пак эмодзи", "a:pack"), B("🕵️ Сборщик", "a:col")],
+        [B("📈 Статистика", "a:stats"), B("📨 Рассылка", "a:post")],
+        [B("🦆 Пак эмодзи", "a:pack"), B("🔒 Сборщик", "a:col")],
     ])
 
 
@@ -652,6 +652,9 @@ async def make_pack(event, bot: Bot) -> None:
 
     try:
         count = await pack.ensure(bot, name, user.id, notify)
+        icons = emoji.icons_name(me.username)
+        await pack.ensure(bot, icons, user.id, notify, icons=True)
+        await emoji.load_icons(bot, icons)
     except Exception as error:
         await status.edit_text(f"❌ Пак не собрался: {html.escape(str(error))}\n\n"
                                "Чтобы бот мог создать пак, напиши ему /start со своего аккаунта.")

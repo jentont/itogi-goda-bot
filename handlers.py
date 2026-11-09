@@ -77,7 +77,7 @@ def menu_kb(user_id: int) -> InlineKeyboardMarkup:
     if config.PROJECT_CHANNEL:
         extra.append(InlineKeyboardButton(text="📢 Наш канал", url=config.PROJECT_CHANNEL))
     if config.ADS_CONTACT:
-        extra.append(InlineKeyboardButton(text="🤝 Реклама", url=config.ADS_CONTACT))
+        extra.append(InlineKeyboardButton(text="💰 Реклама", url=config.ADS_CONTACT))
     if extra:
         rows.append(extra)
     return InlineKeyboardMarkup(inline_keyboard=rows)

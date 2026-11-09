@@ -22,11 +22,11 @@ log = logging.getLogger("itogi.pack")
 Notify = Callable[[str], Awaitable[None]] | None
 
 
-def _sticker(file: str, plain: str) -> InputSticker:
+def _sticker(file: str, plain: str, folder=None) -> InputSticker:
     from admin import _tgs_for_emoji  # там же конвертер под правила Telegram (100×100, ≤3 с)
 
     return InputSticker(
-        sticker=BufferedInputFile(_tgs_for_emoji(config.TGS_DIR / file), filename=file),
+        sticker=BufferedInputFile(_tgs_for_emoji((folder or config.TGS_DIR) / file), filename=file),
         format="animated",
         emoji_list=[plain],
     )
@@ -46,23 +46,27 @@ async def _retry(call, notify: Notify, tries: int = 4):
             await asyncio.sleep(wait.retry_after + 2)
 
 
-async def ensure(bot: Bot, name: str, owner: int, notify: Notify = None) -> int:
+async def ensure(bot: Bot, name: str, owner: int, notify: Notify = None, icons: bool = False) -> int:
     """Довести пак до полного: создать, если нет, или добавить недостающие эмодзи.
 
-    Возвращает, сколько эмодзи в паке. Уже полный пак не трогает.
+    icons=True — пак белых иконок кнопок: needs_repainting, Telegram красит
+    их в цвет текста. Возвращает, сколько эмодзи в паке. Полный пак не трогает.
     """
-    items = [(f, e) for f, e in emoji.PACK_ITEMS if (config.TGS_DIR / f).exists()]
+    folder = config.ICONS_DIR if icons else config.TGS_DIR
+    source = emoji.ICON_ITEMS if icons else emoji.PACK_ITEMS
+    items = [(f, e) for f, e in source if (folder / f).exists()]
     try:
         have = await bot.get_sticker_set(name)
     except TelegramBadRequest:
         have = None
-    title = f"Итоги {config.YEAR} · Уточки"
+    title = f"Итоги {config.YEAR} · Иконки" if icons else f"Итоги {config.YEAR} · Уточки"
     if have is None:
         # За раз Telegram принимает до 50 штук, остальное — по одной.
         first, rest = items[:50], items[50:]
         await _retry(lambda: bot.create_new_sticker_set(
             user_id=owner, name=name, title=title,
-            stickers=[_sticker(f, e) for f, e in first], sticker_type="custom_emoji",
+            stickers=[_sticker(f, e, folder) for f, e in first], sticker_type="custom_emoji",
+            needs_repainting=icons or None,
         ), notify)
         present = {e for _, e in first}
     else:
@@ -71,7 +75,7 @@ async def ensure(bot: Bot, name: str, owner: int, notify: Notify = None) -> int:
     for f, e in rest:
         if e in present:
             continue
-        await _retry(lambda f=f, e=e: bot.add_sticker_to_set(user_id=owner, name=name, sticker=_sticker(f, e)), notify)
+        await _retry(lambda f=f, e=e: bot.add_sticker_to_set(user_id=owner, name=name, sticker=_sticker(f, e, folder)), notify)
         present.add(e)
         await asyncio.sleep(0.4)
     got = await bot.get_sticker_set(name)

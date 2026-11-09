@@ -62,8 +62,20 @@ PACK_ITEMS: tuple[tuple[str, str], ...] = (
     ("034.tgs", "🫂"),
 )
 
+#: Белые иконки кнопок в стиле iOS (tools/icons.py) — отдельный пак с
+#: needs_repainting: Telegram красит их в цвет текста. На кнопках они главнее уточек.
+ICON_ITEMS: tuple[tuple[str, str], ...] = (
+    ("back.tgs", "⬅️"), ("plus.tgs", "➕"), ("close.tgs", "✖️"), ("check.tgs", "✅"),
+    ("sparkles.tgs", "✨"), ("gift.tgs", "🎁"), ("people.tgs", "👥"), ("megaphone.tgs", "📢"),
+    ("trash.tgs", "🗑"), ("refresh.tgs", "🔄"), ("chart.tgs", "📈"), ("chart2.tgs", "📊"),
+    ("mail.tgs", "📨"), ("lock.tgs", "🔒"), ("target.tgs", "🎯"), ("rocket.tgs", "🚀"),
+    ("key.tgs", "🔑"), ("coin.tgs", "💰"), ("star.tgs", "⭐"),
+)
+
 #: Обычный эмодзи → id премиального. Заполняется из пака при старте.
 PACK: dict[str, str] = {}
+#: То же для белых иконок кнопок.
+ICONS: dict[str, str] = {}
 
 TAG = '<tg-emoji emoji-id="{id}">{emoji}</tg-emoji>'
 UNTAG = re.compile(r'<tg-emoji emoji-id="\d+">(.*?)</tg-emoji>', re.S)
@@ -91,6 +103,26 @@ def status() -> str:
 
 def pack_name(bot_username: str) -> str:
     return f"itogi_ducks_by_{bot_username}"
+
+
+def icons_name(bot_username: str) -> str:
+    return f"itogi_icons_by_{bot_username}"
+
+
+async def load_icons(bot: Any, name: str) -> int:
+    """Прочитать пак белых иконок. Вернёт, сколько иконок подключено."""
+    try:
+        got = await bot.get_sticker_set(name)
+    except Exception as error:
+        log.info("пак иконок «%s» не прочитать: %s", name, error)
+        return 0
+    ICONS.clear()
+    for one in got.stickers or []:
+        if one.custom_emoji_id and one.emoji:
+            for form in _forms(one.emoji):
+                ICONS.setdefault(form, one.custom_emoji_id)
+    log.info("пак иконок «%s»: %s шт.", name, len(got.stickers or []))
+    return len(got.stickers or [])
 
 
 async def load(bot: Any, name: str) -> str:
@@ -197,12 +229,18 @@ def dress_buttons(method: Any) -> None:
         text = getattr(button, "text", None)
         if not isinstance(text, str) or getattr(button, "icon_custom_emoji_id", None):
             continue
-        for plain in sorted(PACK, key=len, reverse=True):
-            if text.startswith(plain):
-                rest = text[len(plain):].lstrip()
-                if rest:
-                    _set(button, "text", rest)
-                    _set(button, "icon_custom_emoji_id", PACK[plain])
+        # Белые иконки iOS — первыми, уточки — если иконки под этот эмодзи нет.
+        for source in (ICONS, PACK):
+            done = False
+            for plain in sorted(source, key=len, reverse=True):
+                if text.startswith(plain):
+                    rest = text[len(plain):].lstrip()
+                    if rest:
+                        _set(button, "text", rest)
+                        _set(button, "icon_custom_emoji_id", source[plain])
+                    done = True
+                    break
+            if done:
                 break
 
 

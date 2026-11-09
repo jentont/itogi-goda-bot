@@ -146,7 +146,7 @@ def caption(data: dict | None) -> str:
     v = facts.verdict(data)
     lines = [
         f"🦆 <b>Мой {year} в Telegram</b>",
-        f"🔥 <b>{html.escape(v['title'])}</b> — <i>{html.escape(v['why'])}</i>",
+        f"🏆 <b>{html.escape(v['title'])}</b> — <i>{html.escape(v['why'])}</i>",
     ]
     if data.get("prediction"):
         lines.append(f"🌙 <tg-spoiler>{html.escape(data['prediction'])}</tg-spoiler>")
