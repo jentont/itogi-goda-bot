@@ -140,32 +140,40 @@ def caption(data: dict | None) -> str:
     year = config.YEAR
     if not data:
         return (
-            f"🦆 <b>Итоги {year} в Telegram</b>\n"
-            "<i>Подарки, уровень и итог года — у каждого свои</i>"
+            f"🦆 <b>Итоги {year} в Telegram</b>\n\n"
+            "<blockquote>📅 Сколько ты в Telegram\n🎁 Сколько стоят твои подарки\n🏆 Твой итог года</blockquote>\n"
+            "<i>У каждого свои</i> ✨"
         )
     v = facts.verdict(data)
     lines = [
         f"🦆 <b>Мой {year} в Telegram</b>",
-        f"🏆 <b>{html.escape(v['title'])}</b> — <i>{html.escape(v['why'])}</i>",
+        "",
+        f"🏆 <b><u>{html.escape(v['title'])}</u></b>",
+        f"<i>{html.escape(v['why'][:1].upper() + v['why'][1:])}</i>",
     ]
-    # Цифры одной строкой-цитатой: глаз цепляется, а на рекламу не похоже.
-    nums = []
+    # Цифры — цитатой, по строке на цифру: читается с одного взгляда.
+    rows = []
     a = data.get("age") or {}
     g = data.get("gifts") or {}
     r = data.get("rating") or {}
+    w = data.get("worth") or {}
     if a.get("days"):
-        nums.append(f"📅 <b>{_num(a['days'])}</b> {a.get('word', 'дней')}")
+        rows.append(f"📅 В Telegram — <b>{_num(a['days'])} {a.get('word', 'дней')}</b>")
     if g.get("now"):
-        nums.append(f"🎁 <b>{_num(g['now'])}</b>")
+        word = facts.plural(g["now"], "подарок", "подарка", "подарков")
+        rows.append(f"🎁 В профиле — <b>{_num(g['now'])} {word}</b>")
     if r.get("level"):
-        nums.append(f"⭐ <b>{r['level']}</b> ур.")
-    if nums:
-        lines.append("<blockquote>" + "  ·  ".join(nums) + "</blockquote>")
-    _, fun = cards._fun_line(data)
+        rows.append(f"⭐ Уровень — <b>{r['level']}</b>")
+    if w.get("rub"):
+        rows.append(f"💰 Профиль ≈ <b>{_num(w['rub'])} ₽</b>")
+    if rows:
+        lines += ["", "<blockquote>" + "\n".join(rows) + "</blockquote>"]
     if data.get("fun"):
-        lines.append(f"👀 <i>По версии уточек</i> — {html.escape(fun[:1].lower() + fun[1:])}")
+        _, fun = cards._fun_line(data)
+        label, _, value = fun.partition(": ")
+        lines += ["", f"👀 <b>По версии уточек</b>\n<i>{html.escape(label)}</i> — <b>{html.escape(value)}</b>"]
     if data.get("prediction"):
-        lines.append(f"🌙 {year + 1}: <tg-spoiler>{html.escape(data['prediction'])}</tg-spoiler>")
+        lines += ["", f"🌙 <b>Прогноз на {year + 1}</b>\n<tg-spoiler>{html.escape(data['prediction'])}</tg-spoiler>"]
     return "\n".join(lines)
 
 
