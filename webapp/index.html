@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Итоги года</title>
+  <link rel="preload" href="/app/fonts/Unbounded-Black.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="preload" href="/app/fonts/Manrope-Bold.ttf" as="font" type="font/ttf" crossorigin>
+  <link rel="stylesheet" href="/app/style.css?v=3">
+  <script src="https://telegram.org/js/telegram-web-app.js?59"></script>
+  <script src="/app/vendor/lottie_light.min.js"></script>
+</head>
+<body>
+  <div id="bg"><canvas id="wall"></canvas><div id="pattern"></div></div>
+  <div id="aurora"></div>
+  <canvas id="snow"></canvas>
+  <canvas id="fx"></canvas>
+
+  <div id="app">
+    <!-- Загрузка -->
+    <section class="screen active" id="s-loading">
+      <div class="hero hero-sm"><div class="lottie" data-sticker="031"></div></div>
+      <h2 class="title-md">Собираем твой год</h2>
+      <p class="muted">Секунду — уточки уже считают подарки</p>
+      <div class="dots"><i></i><i></i><i></i></div>
+    </section>
+
+    <!-- Подписка -->
+    <section class="screen" id="s-subscribe">
+      <div class="hero hero-sm"><div class="lottie" data-sticker="013"></div></div>
+      <h2 class="title-md">Почти готово!</h2>
+      <p class="muted">Подпишись на каналы наших друзей — и итоги откроются</p>
+      <div class="sponsors" id="sponsorList"></div>
+      <button class="btn btn-white" id="checkBtn"><span>Проверить подписку</span></button>
+      <p class="hint" id="checkHint"></p>
+    </section>
+
+    <!-- Удержание -->
+    <section class="screen" id="s-hold">
+      <div class="hold-top">
+        <div class="pill">ИТОГИ <span class="year"></span></div>
+        <div class="hold-hero">
+          <div class="big-year" aria-hidden="true"><span class="year"></span></div>
+          <div class="hold-duck"><div class="lottie" data-sticker="039"></div></div>
+        </div>
+        <h1 class="title-lg hold-title">Твои итоги<br><span class="shimmer">уже готовы</span></h1>
+        <div class="teasers">
+          <span class="teaser" style="--d:0s"><span class="ico lottie" data-sticker="018"></span>Подарки</span>
+          <span class="teaser" style="--d:.4s"><span class="ico lottie" data-sticker="032"></span>Уровень</span>
+          <span class="teaser" style="--d:.8s"><span class="ico lottie" data-sticker="004"></span>Шок-факты</span>
+          <span class="teaser" style="--d:1.2s"><span class="ico lottie" data-sticker="030"></span>План 2027</span>
+        </div>
+      </div>
+      <div class="hold-zone">
+        <div class="hold" id="hold">
+          <i class="wave"></i><i class="wave" style="animation-delay:.9s"></i><i class="wave" style="animation-delay:1.8s"></i>
+          <div class="orbit"><b></b><b></b><b></b></div>
+          <svg viewBox="0 0 200 200" class="hold-ring">
+            <defs>
+              <linearGradient id="holdGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#ff2d78"/><stop offset=".5" stop-color="#ff375f"/><stop offset="1" stop-color="#ff9500"/>
+              </linearGradient>
+            </defs>
+            <circle cx="100" cy="100" r="92" class="ring-bg"/>
+            <circle cx="100" cy="100" r="92" class="ring-fg" id="holdRing"/>
+          </svg>
+          <div class="hold-core">
+            <div class="scan"></div>
+            <svg viewBox="0 0 64 64" class="finger finger-dim" aria-hidden="true"><g fill="none" stroke-width="2.3" stroke-linecap="round"><path pathLength="1" d="M30.40 36.10A3.20 3.58 0 1 1 33.60 36.10"/><path pathLength="1" d="M30.89 40.06A6.40 7.17 0 1 1 37.54 36.58"/><path pathLength="1" d="M36.11 38.49A6.40 7.17 0 0 1 32.56 40.14"/><path pathLength="1" d="M28.72 43.10A9.60 10.75 0 1 1 41.45 34.87"/><path pathLength="1" d="M39.86 39.17A9.60 10.75 0 0 1 34.48 43.39"/><path pathLength="1" d="M25.60 45.42A12.80 14.34 0 1 1 44.03 28.10"/><path pathLength="1" d="M44.75 34.25A12.80 14.34 0 0 1 38.40 45.42"/><path pathLength="1" d="M21.72 46.73A16.00 17.92 0 0 1 42.28 19.27"/><path pathLength="1" d="M46.50 25.43A16.00 17.92 0 0 1 43.31 45.67"/><path pathLength="1" d="M16.87 46.24A19.20 21.50 0 0 1 38.57 12.79"/><path pathLength="1" d="M46.27 18.61A19.20 21.50 0 0 1 48.95 43.10"/><path pathLength="1" d="M11.23 42.40A22.40 25.09 0 0 1 28.11 8.29"/><path pathLength="1" d="M39.66 9.42A22.40 25.09 0 0 1 54.06 37.36"/><path pathLength="1" d="M6.40 33.00A25.60 28.67 0 0 1 19.20 8.17"/><path pathLength="1" d="M34.23 4.44A25.60 28.67 0 0 1 56.73 25.58"/></g></svg>
+            <svg viewBox="0 0 64 64" class="finger finger-lit" id="fingerLit" aria-hidden="true"><defs><linearGradient id="tidGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#ff2d78"/><stop offset=".55" stop-color="#ff375f"/><stop offset="1" stop-color="#ff9500"/></linearGradient></defs><g fill="none" stroke-width="2.3" stroke-linecap="round"><path pathLength="1" d="M30.40 36.10A3.20 3.58 0 1 1 33.60 36.10"/><path pathLength="1" d="M30.89 40.06A6.40 7.17 0 1 1 37.54 36.58"/><path pathLength="1" d="M36.11 38.49A6.40 7.17 0 0 1 32.56 40.14"/><path pathLength="1" d="M28.72 43.10A9.60 10.75 0 1 1 41.45 34.87"/><path pathLength="1" d="M39.86 39.17A9.60 10.75 0 0 1 34.48 43.39"/><path pathLength="1" d="M25.60 45.42A12.80 14.34 0 1 1 44.03 28.10"/><path pathLength="1" d="M44.75 34.25A12.80 14.34 0 0 1 38.40 45.42"/><path pathLength="1" d="M21.72 46.73A16.00 17.92 0 0 1 42.28 19.27"/><path pathLength="1" d="M46.50 25.43A16.00 17.92 0 0 1 43.31 45.67"/><path pathLength="1" d="M16.87 46.24A19.20 21.50 0 0 1 38.57 12.79"/><path pathLength="1" d="M46.27 18.61A19.20 21.50 0 0 1 48.95 43.10"/><path pathLength="1" d="M11.23 42.40A22.40 25.09 0 0 1 28.11 8.29"/><path pathLength="1" d="M39.66 9.42A22.40 25.09 0 0 1 54.06 37.36"/><path pathLength="1" d="M6.40 33.00A25.60 28.67 0 0 1 19.20 8.17"/><path pathLength="1" d="M34.23 4.44A25.60 28.67 0 0 1 56.73 25.58"/></g></svg>
+          </div>
+        </div>
+        <p class="hold-hint" id="holdHint">Удерживай палец на отпечатке</p>
+      </div>
+    </section>
+
+    <!-- Слайды -->
+    <section class="screen" id="s-story">
+      <div class="bars" id="bars"></div>
+      <div class="slides" id="slides"></div>
+      <div class="nav" id="nav">
+        <button class="btn btn-ghost" id="prevBtn"><span>Назад</span></button>
+        <button class="btn btn-white" id="nextBtn"><span>Продолжить</span></button>
+      </div>
+    </section>
+
+    <!-- Ошибка -->
+    <section class="screen" id="s-error">
+      <div class="hero hero-sm"><div class="lottie" data-sticker="006"></div></div>
+      <h2 class="title-md">Что-то пошло не так</h2>
+      <p class="muted" id="errorText">Попробуй открыть итоги ещё раз</p>
+      <button class="btn btn-white" id="retryBtn"><span>Обновить</span></button>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="/app/app.js?v=3"></script>
+</body>
+</html>
