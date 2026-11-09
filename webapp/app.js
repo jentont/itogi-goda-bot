@@ -781,23 +781,21 @@
       }
 
       // 4г. Стоимость профиля: подарки (NFT — по редкости), NFT-юзернеймы
-      // с Fragment и анонимный номер +888 — как в mogbattle.
-      const w = d.worth || { total: g.value || 0, gifts: g.value || 0, names: 0, anon: 0, rub: g.rub || 0, usd: 0 };
+      // с Fragment — как в mogbattle.
+      const w = d.worth || { total: g.value || 0, gifts: g.value || 0, names: 0, rub: g.rub || 0, usd: 0 };
       const names = (d.nft_names || []).map((n) => "@" + esc(n.name)).join(", ");
       S.push({
         theme: "gold",
         html: `${pill(`${ic("030")}СТОИМОСТЬ ПРОФИЛЯ`)}
           <div class="hero hero-sm"><div class="lottie" data-sticker="030"></div></div>
           <h2>${w.total ? "Твой профиль стоит" : "Твоя коллекция"}</h2>
-          ${w.total ? `<div class="value-row"><div class="value" data-count="${w.total}">0</div><span class="ico ico-lg lottie" data-sticker="010"></span></div>
+          ${w.total ? `<div class="value-row"><div class="value" data-count="${w.total}">0</div><i class="st st-lg">★</i></div>
             <div class="cap">звёзд · примерно <b>${fmt(w.rub)} ₽</b>${w.usd ? ` / $${fmt(w.usd)}` : ""}</div>` : ""}
           <div class="extra">${factList([
-            ["018", `Подарков в профиле: ${fmt(g.now)}`, w.gifts ? `≈ ${fmt(w.gifts)} ⭐` : "—"],
-            g.nft ? ["010", `NFT-подарков: ${fmt(g.nft)}`, g.rare && g.rare.name ? `${esc(g.rare.name)} · ${String(g.rare.pct).replace(".", ",")}%` : `≈ ${fmt(g.value_nft || 0)} ⭐`] : null,
-            names ? ["028", `NFT-юзернейм: ${names}`, `≈ ${fmt(w.names)} ⭐`] : null,
-            d.anon ? ["013", "Анонимный номер +888", `≈ ${fmt(w.anon)} ⭐`] : null,
+            ["018", `Подарков в профиле: ${fmt(g.now)}`, w.gifts ? `≈ ${fmt(w.gifts)} <i class="st">★</i>` : "—"],
+            g.nft ? ["010", `NFT-подарков: ${fmt(g.nft)}`, g.rare && g.rare.name ? `${esc(g.rare.name)} · ${String(g.rare.pct).replace(".", ",")}%` : `≈ ${fmt(g.value_nft || 0)} <i class="st">★</i>`] : null,
+            names ? ["028", `NFT-юзернейм: ${names}`, `≈ ${fmt(w.names)} <i class="st">★</i>`] : null,
           ])}
-          ${d.anon ? "" : `<button class="btn btn-ghost js-anon" style="width:100%;margin-top:8px">${ic("013")}У меня номер +888</button>`}
           <div class="cap gift-note">NFT — оценка по редкости, юзернеймы — по продажам на Fragment. Скрытые подарки Telegram ботам не показывает</div></div>`,
       });
 
@@ -809,7 +807,7 @@
             ${hero("g:" + top.sticker)}
             <h2>${esc(top.title)}</h2>
             <p class="sub">${top.date ? `Получен ${esc(top.date)}` : "Самый ценный подарок в твоей коллекции"}</p>
-            ${top.stars ? `<div class="value-row"><div class="value gold" data-count="${top.stars}">0</div><span class="ico ico-lg lottie" data-sticker="010"></span></div>` : ""}
+            ${top.stars ? `<div class="value-row"><div class="value gold" data-count="${top.stars}">0</div><i class="st st-lg">★</i></div>` : ""}
             ${top.rarity ? `<div class="value gold">${String(top.rarity).replace(".", ",")}%</div><div class="cap">${top.model ? `модель «${esc(top.model)}» — ` : ""}такая есть только у ${String(top.rarity).replace(".", ",")}% владельцев этого подарка</div>` : ""}
             ${g.nft ? `<div class="cap">Всего NFT-подарков: ${g.nft}</div>` : ""}`,
           spark: [0.85, 0.2],
@@ -1102,7 +1100,6 @@
       if (b.classList.contains("js-send")) { await sendToFriends(b); return; }
       if (b.classList.contains("js-story")) { await toStory(b); }
       if (b.classList.contains("js-tiktok")) { await toTikTok(b); }
-      if (b.classList.contains("js-anon")) { shareAnon(b); }
     });
   }
 
@@ -1181,31 +1178,6 @@
 
   // TikTok не даёт выложить ролик из Telegram напрямую: сохраняем вертикальное
   // видео на телефон (в нём водяной знак с ботом) и открываем TikTok.
-  // Анонимный номер +888 боту не виден — человек сам делится номером через
-  // Telegram. Сервер проверяет подпись и хранит только отметку «+888 есть».
-  function shareAnon(btn) {
-    haptic("light");
-    if (DEMO) { toast("В Telegram тут попросят поделиться номером"); return; }
-    if (!can("6.9") || !tg.requestContact) { toast("Обнови Telegram, чтобы учесть номер"); return; }
-    tg.requestContact(async (ok, res) => {
-      if (!ok || !res || res.status !== "sent" || !res.response) { toast("Номер не отправлен"); return; }
-      btn.disabled = true;
-      try {
-        const r = await api("/api/phone", { contact: res.response });
-        if (!r.anon) { toast("Это не анонимный номер +888"); return; }
-        haptic("success");
-        toast(`${ic("003")}Номер +888 учтён в стоимости!`);
-        const back = idx;
-        const fresh = await api("/api/start", { fresh: true });
-        if (fresh.state === "ready") { DATA = fresh.data; startStory(); go(back); }
-      } catch (_) {
-        toast("Не получилось, попробуй ещё раз");
-      } finally {
-        btn.disabled = false;
-      }
-    });
-  }
-
   async function toTikTok(btn) {
     haptic("light");
     if (DEMO) { toast("В Telegram тут сохранится видео и откроется TikTok"); return; }
@@ -1273,8 +1245,8 @@
       bday: { sign: "Дева", left: 308, turns: 24 },
       profile: { usernames: 1, bio: true, status: true, channel: "Ванин блог", paid: 0, colors: true, music: false, photos: 12 },
       older: 64,
-      nft_names: [{ name: "solutions", ton: 1200, exact: false }], anon: false,
-      worth: { gifts: 42660, names: 240000, anon: 0, total: 282660, rub: 508790, usd: 4240 },
+      nft_names: [{ name: "solutions", ton: 1200, exact: false }],
+      worth: { gifts: 42660, names: 240000, total: 282660, rub: 508790, usd: 4240 },
       fun: [
         { key: "ignore", sticker: "023", label: "Игнорил(-а) сообщения", value: 87, unit: "дн." },
         { key: "fast", sticker: "030", label: "Самый быстрый ответ", value: "0,8", unit: "сек" },

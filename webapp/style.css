@@ -513,3 +513,8 @@ body {
 .final-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .final-row .btn { width: 100%; padding-left: 10px; padding-right: 10px; }
 .btn-tiktok { background: #111; color: #fff; box-shadow: -2px -2px 0 #25f4ee inset, 2px 2px 0 #fe2c55 inset, 0 10px 26px rgba(0,0,0,.25); }
+
+/* белая звезда вместо жёлтого эмодзи ⭐ */
+.st { font-style: normal; color: #fff; text-shadow: 0 0 6px rgba(255,255,255,.6); margin-left: 2px; }
+.st-lg { font-size: 44px; line-height: 1; margin-left: 4px; text-shadow: 0 0 14px rgba(255,255,255,.7); }
+.value-row .st.st-lg { font-size: 40px !important; line-height: 1 !important; flex: none; display: inline-block; }

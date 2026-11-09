@@ -548,18 +548,17 @@ async def nft_usernames(names: list[str]) -> list[dict]:
     return [x for x in got if x]
 
 
-def worth(g: dict | None, nft_names: list[dict], anon: bool) -> dict:
+def worth(g: dict | None, nft_names: list[dict]) -> dict:
     """Стоимость профиля в звёздах: подарки (NFT — оценка по редкости),
-    коллекционные юзернеймы по Fragment и анонимный номер +888."""
+    коллекционные юзернеймы по Fragment."""
     import fragment
 
     usd_ton = fragment.rate()
     gifts_stars = int((g or {}).get("value") or 0)
     names_stars = int(sum(n["ton"] for n in nft_names) * usd_ton / config.USD_PER_STAR)
-    anon_stars = int(config.ANON_NUMBER_USD / config.USD_PER_STAR) if anon else 0
-    total = gifts_stars + names_stars + anon_stars
+    total = gifts_stars + names_stars
     return {
-        "gifts": gifts_stars, "names": names_stars, "anon": anon_stars, "total": total,
+        "gifts": gifts_stars, "names": names_stars, "total": total,
         "rub": int(round(total * config.STAR_RUB, -1)),
         "usd": int(round(total * config.USD_PER_STAR)),
     }
@@ -617,9 +616,6 @@ async def build(bot: Bot, user: dict, premium: bool, photo_url: str | None) -> d
 
     noms = nominations(user_id)
     name = (user.get("first_name") or "").strip() or "Уточка"
-    # +888 — только если человек сам поделился номером в мини-аппе (боту
-    # номера не видны), отметку ставит web.api_phone после проверки подписи.
-    anon = (await db.get_setting(f"anon:{user_id}")) == "1"
     nft_names = prof.get("nft_names") or []
     return {
         "year": config.YEAR,
@@ -643,8 +639,7 @@ async def build(bot: Bot, user: dict, premium: bool, photo_url: str | None) -> d
         "prediction": prediction(user_id),
         "fun": fun_stats(user_id),
         "nft_names": nft_names,
-        "anon": anon,
-        "worth": worth(g, nft_names, anon),
+        "worth": worth(g, nft_names),
         "at": int(time.time()),
     }
 
