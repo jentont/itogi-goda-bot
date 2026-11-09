@@ -34,6 +34,8 @@ YEAR = int(os.getenv("YEAR", "2026"))
 
 #: Файл базы.
 DB_PATH = Path(os.getenv("DB_PATH", str(ROOT / "data" / "itogi.db")))
+#: PostgreSQL (postgresql://user:pass@host:5432/db). Задан — база там, а не в файле DB_PATH.
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
 #: Куда складывать готовые карточки (mp4/jpg). Чистится само по возрасту.
 CARDS_DIR = Path(os.getenv("CARDS_DIR", str(ROOT / "data" / "cards")))

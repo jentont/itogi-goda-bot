@@ -1,12 +1,18 @@
-"""База на SQLite: люди, спонсоры, настройки, снимки уровня и подарков.
+"""База: люди, спонсоры, настройки, снимки уровня и подарков.
 
-Одно соединение на весь процесс: aiosqlite сериализует запросы сам, а
-бот и веб-сервер живут в одном цикле событий.
+Два режима:
+- задан DATABASE_URL (postgresql://...) — PostgreSQL через asyncpg (пул
+  соединений). Так на хостинге данные не пропадают при пересборке;
+- иначе — файл SQLite (DB_PATH), одно соединение на процесс.
+
+Запросы пишутся в синтаксисе SQLite («?», INSERT OR REPLACE / IGNORE);
+для Postgres они переводятся в _pg_sql().
 """
 
 from __future__ import annotations
 
 import json
+import re
 import time
 from typing import Any
 
@@ -15,6 +21,7 @@ import aiosqlite
 import config
 
 _db: aiosqlite.Connection | None = None
+_pg: Any = None  # asyncpg.Pool, когда работаем с PostgreSQL
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
@@ -93,8 +100,51 @@ CREATE TABLE IF NOT EXISTS cards (
 """
 
 
+# Схема для PostgreSQL: те же таблицы, но id Telegram не влезают в 32 бита — BIGINT.
+PG_SCHEMA = re.sub(r"\bINTEGER\b", "BIGINT", SCHEMA).replace(
+    "BIGINT PRIMARY KEY AUTOINCREMENT", "BIGSERIAL PRIMARY KEY"
+)
+
+#: Первичные ключи — чтобы перевести INSERT OR REPLACE в ON CONFLICT ... DO UPDATE.
+_KEYS = {
+    "users": ("id",), "sponsors": ("id",), "sponsor_joins": ("sponsor_id", "user_id"),
+    "settings": ("key",), "snapshots": ("user_id", "day"), "results": ("user_id",),
+    "plans": ("user_id", "year"), "cards": ("user_id",),
+}
+_REPLACE = re.compile(r"INSERT OR REPLACE INTO (\w+) \(([^)]*)\)", re.I)
+_IGNORE = re.compile(r"INSERT OR IGNORE INTO", re.I)
+
+
+def _pg_sql(sql: str) -> str:
+    """SQLite-запрос → PostgreSQL: плейсхолдеры $1.., upsert, insert-ignore."""
+    m = _REPLACE.search(sql)
+    if m:
+        table, cols = m.group(1), [c.strip() for c in m.group(2).split(",")]
+        keys = _KEYS[table]
+        sets = ", ".join(f"{c}=EXCLUDED.{c}" for c in cols if c not in keys)
+        sql = _REPLACE.sub(f"INSERT INTO {table} ({m.group(2)})", sql)
+        sql += f" ON CONFLICT ({', '.join(keys)}) DO " + (f"UPDATE SET {sets}" if sets else "NOTHING")
+    elif _IGNORE.search(sql):
+        sql = _IGNORE.sub("INSERT INTO", sql) + " ON CONFLICT DO NOTHING"
+    n = 0
+
+    def num(_: re.Match) -> str:
+        nonlocal n
+        n += 1
+        return f"${n}"
+
+    return re.sub(r"\?", num, sql)
+
+
 async def open_db() -> None:
-    global _db
+    global _db, _pg
+    if config.DATABASE_URL:
+        import asyncpg
+
+        _pg = await asyncpg.create_pool(config.DATABASE_URL, min_size=1, max_size=10)
+        async with _pg.acquire() as con:
+            await con.execute(PG_SCHEMA)
+        return
     config.DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     _db = await aiosqlite.connect(config.DB_PATH)
     _db.row_factory = aiosqlite.Row
@@ -104,6 +154,8 @@ async def open_db() -> None:
 
 
 async def close_db() -> None:
+    if _pg is not None:
+        await _pg.close()
     if _db is not None:
         await _db.close()
 
@@ -114,18 +166,37 @@ def _c() -> aiosqlite.Connection:
 
 
 async def _one(sql: str, *args: Any) -> dict | None:
+    if _pg is not None:
+        row = await _pg.fetchrow(_pg_sql(sql), *args)
+        return dict(row) if row else None
     async with _c().execute(sql, args) as cur:
         row = await cur.fetchone()
     return dict(row) if row else None
 
 
 async def _all(sql: str, *args: Any) -> list[dict]:
+    if _pg is not None:
+        return [dict(r) for r in await _pg.fetch(_pg_sql(sql), *args)]
     async with _c().execute(sql, args) as cur:
         rows = await cur.fetchall()
     return [dict(r) for r in rows]
 
 
 async def _run(sql: str, *args: Any) -> int:
+    """Выполнить запрос. Вернёт, сколько строк затронуто."""
+    if _pg is not None:
+        status = await _pg.execute(_pg_sql(sql), *args)
+        tail = status.rsplit(" ", 1)[-1]
+        return int(tail) if tail.isdigit() else 0
+    cur = await _c().execute(sql, args)
+    await _c().commit()
+    return cur.rowcount if cur.rowcount and cur.rowcount > 0 else 0
+
+
+async def _insert_id(sql: str, *args: Any) -> int:
+    """INSERT, который возвращает id новой строки."""
+    if _pg is not None:
+        return int(await _pg.fetchval(_pg_sql(sql) + " RETURNING id", *args))
     cur = await _c().execute(sql, args)
     await _c().commit()
     return cur.lastrowid or 0
@@ -162,7 +233,7 @@ async def get_user(user_id: int) -> dict | None:
 
 async def older_share(user_id: int) -> int | None:
     """Скольким процентам пользователей бота аккаунт старше (по id: меньше id — старше)."""
-    row = await _one("SELECT COUNT(*) AS n, SUM(id > ?) AS newer FROM users", user_id)
+    row = await _one("SELECT COUNT(*) AS n, SUM(CASE WHEN id > ? THEN 1 ELSE 0 END) AS newer FROM users", user_id)
     if not row or int(row["n"] or 0) < 30:
         return None
     return int(round(100 * int(row["newer"] or 0) / int(row["n"])))
@@ -249,7 +320,7 @@ async def sponsor(sponsor_id: int) -> dict | None:
 
 
 async def add_sponsor(chat_id: int | None, title: str, username: str | None, link: str, goal: int = 0) -> int:
-    return await _run(
+    return await _insert_id(
         "INSERT INTO sponsors (chat_id, title, username, link, goal, added_at) VALUES (?,?,?,?,?,?)",
         chat_id, title, username, link, goal, int(time.time()),
     )
@@ -269,14 +340,12 @@ async def drop_sponsor(sponsor_id: int) -> None:
 
 async def sponsor_joined(sponsor_id: int, user_id: int) -> bool:
     """Отметить вступление через бота. True — это новое вступление."""
-    cur = await _c().execute(
+    fresh = await _run(
         "INSERT OR IGNORE INTO sponsor_joins (sponsor_id, user_id, at) VALUES (?,?,?)",
-        (sponsor_id, user_id, int(time.time())),
-    )
-    fresh = cur.rowcount > 0
+        sponsor_id, user_id, int(time.time()),
+    ) > 0
     if fresh:
-        await _c().execute("UPDATE sponsors SET joined=joined+1 WHERE id=?", (sponsor_id,))
-    await _c().commit()
+        await _run("UPDATE sponsors SET joined=joined+1 WHERE id=?", sponsor_id)
     return fresh
 
 
