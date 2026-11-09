@@ -33,6 +33,7 @@ from aiogram.types import (
 
 import config
 import db
+import collector
 import emoji
 import pack
 import sponsors
@@ -64,7 +65,7 @@ def panel_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[
         [B("📢 Спонсоры", "a:sp")],
         [B("📊 Статистика", "a:stats"), B("📨 Рассылка", "a:post")],
-        [B("🦆 Пак эмодзи", "a:pack")],
+        [B("🦆 Пак эмодзи", "a:pack"), B("🕵️ Сборщик", "a:col")],
     ])
 
 
@@ -370,6 +371,210 @@ async def _broadcast(bot: Bot, chat: int, msg: int, status: Message) -> None:
             except Exception:
                 pass
     await status.edit_text(f"✅ Рассылка закончена\nДоставлено: <b>{ok}</b>\nНе дошло: <b>{bad}</b>")
+
+
+# ------------------------------------------------------------- сборщик (как в mogbattle)
+
+class Col(StatesGroup):
+    keys = State()
+    phone = State()
+    code = State()
+    password = State()
+
+
+#: Начатые входы: id админа → {"client", "phone", "hash"}.
+_logins: dict[int, dict] = {}
+
+CANCEL_KB = InlineKeyboardMarkup(inline_keyboard=[[B("✖️ Отмена", "a:colx")]])
+
+
+async def _drop_login(admin_id: int) -> None:
+    login = _logins.pop(admin_id, None)
+    if login and login.get("client") is not None:
+        try:
+            await login["client"].disconnect()
+        except Exception:
+            pass
+
+
+@router.callback_query(F.data == "a:col")
+async def col_screen(call: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
+    name = await collector.connected()
+    text = (
+        "🕵️ <b>Аккаунт-сборщик</b>\n\n"
+        + (f"Подключён: <b>{html.escape(name)}</b> ✅\n\n" if name else "Не подключён.\n\n")
+        + "Это обычный аккаунт Telegram, через который бот видит то, чего не отдаёт Bot API:\n"
+        "• открытый номер <b>+888</b> — прибавляется к стоимости профиля;\n"
+        "• <b>рыночные цены NFT</b>: выставленная цена и флор коллекции вместо оценки по редкости.\n\n"
+        "⚠️ Заведи для этого <b>отдельный</b> аккаунт: если Telegram сочтёт активность "
+        "подозрительной, ограничат именно его. Сессия хранится в базе бота, "
+        "код и пароль бот удаляет из чата сразу."
+    )
+    rows = [[B("🔄 Подключить заново", "a:colgo"), B("🗑 Отключить", "a:coldel")]] if name else [[B("➕ Подключить", "a:colgo")]]
+    await _edit(call, text, InlineKeyboardMarkup(inline_keyboard=rows + [BACK]))
+
+
+@router.callback_query(F.data == "a:colx")
+async def col_cancel(call: CallbackQuery, state: FSMContext) -> None:
+    await _drop_login(call.from_user.id)
+    await col_screen(call, state)
+
+
+@router.callback_query(F.data == "a:coldel")
+async def col_delete(call: CallbackQuery) -> None:
+    await _edit(call, "Отключить сборщика? Бот выйдет из его сессии.", InlineKeyboardMarkup(inline_keyboard=[
+        [B("🗑 Да, отключить", "a:coldel2"), B("⬅️ Нет", "a:col")],
+    ]))
+
+
+@router.callback_query(F.data == "a:coldel2")
+async def col_delete_ok(call: CallbackQuery, state: FSMContext) -> None:
+    await collector.drop()
+    await col_screen(call, state)
+
+
+@router.callback_query(F.data == "a:colgo")
+async def col_go(call: CallbackQuery, state: FSMContext) -> None:
+    await call.answer()
+    api_id, api_hash = await collector.api_keys()
+    if not api_id or not api_hash:
+        await state.set_state(Col.keys)
+        await call.message.answer(
+            "1️⃣ Нужны ключи приложения: зайди на <b>my.telegram.org</b> → API development tools "
+            "и пришли сюда <b>api_id</b> и <b>api_hash</b> через пробел.\n\n"
+            "Например: <code>1234567 0123456789abcdef0123456789abcdef</code>",
+            reply_markup=CANCEL_KB,
+        )
+        return
+    await state.set_state(Col.phone)
+    await call.message.answer("📱 Пришли номер аккаунта-сборщика, например <code>+79991234567</code>",
+                              reply_markup=CANCEL_KB)
+
+
+@router.message(Col.keys)
+async def col_keys(message: Message, state: FSMContext) -> None:
+    parts = (message.text or "").split()
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    if len(parts) != 2 or not parts[0].isdigit() or len(parts[1]) < 20:
+        await message.answer("Не похоже на api_id и api_hash. Пришли два значения через пробел.", reply_markup=CANCEL_KB)
+        return
+    await db.set_setting(collector.KEY_API_ID, parts[0])
+    await db.set_setting(collector.KEY_API_HASH, parts[1])
+    await state.set_state(Col.phone)
+    await message.answer("✅ Ключи сохранены.\n\n📱 Теперь номер аккаунта-сборщика, например <code>+79991234567</code>",
+                         reply_markup=CANCEL_KB)
+
+
+@router.message(Col.phone)
+async def col_phone(message: Message, state: FSMContext) -> None:
+    digits = "".join(ch for ch in (message.text or "") if ch.isdigit())
+    if not 10 <= len(digits) <= 15:
+        await message.answer("Это не номер. Пример: <code>+79991234567</code>", reply_markup=CANCEL_KB)
+        return
+    phone = f"+{digits}"
+    await _drop_login(message.from_user.id)
+    api_id, api_hash = await collector.api_keys()
+    client = collector.make_client("", api_id, api_hash)
+    try:
+        await client.connect()
+        sent = await client.send_code_request(phone)
+    except Exception as error:
+        try:
+            await client.disconnect()
+        except Exception:
+            pass
+        await message.answer(f"❌ Код не отправился: {html.escape(str(error))}", reply_markup=CANCEL_KB)
+        return
+    _logins[message.from_user.id] = {"client": client, "phone": phone, "hash": sent.phone_code_hash}
+    await state.set_state(Col.code)
+    await message.answer(
+        "2️⃣ Telegram прислал код — обычно в приложение, в чат «Telegram» этого аккаунта.\n\n"
+        "Пришли его <b>с пробелами</b>: <code>1 2 3 4 5</code>. Без пробелов Telegram заметит "
+        "код в переписке и отменит его — это его защита от мошенников.",
+        reply_markup=CANCEL_KB,
+    )
+
+
+@router.message(Col.code)
+async def col_code(message: Message, state: FSMContext) -> None:
+    code = "".join(ch for ch in (message.text or "") if ch.isdigit())
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    login = _logins.get(message.from_user.id)
+    if login is None:
+        await state.clear()
+        await message.answer("Вход потерялся, начни заново: /admin → Сборщик.")
+        return
+    from telethon.errors import PhoneCodeExpiredError, PhoneCodeInvalidError, SessionPasswordNeededError
+
+    try:
+        await login["client"].sign_in(phone=login["phone"], code=code, phone_code_hash=login["hash"])
+    except SessionPasswordNeededError:
+        await state.set_state(Col.password)
+        await message.answer("3️⃣ На аккаунте облачный пароль — пришли его (сообщение удалю сразу).",
+                             reply_markup=CANCEL_KB)
+        return
+    except PhoneCodeInvalidError:
+        await message.answer("Код не подошёл, пришли ещё раз (с пробелами).", reply_markup=CANCEL_KB)
+        return
+    except PhoneCodeExpiredError:
+        await _drop_login(message.from_user.id)
+        await state.clear()
+        await message.answer("Код устарел — начни заново: /admin → Сборщик.")
+        return
+    except Exception as error:
+        await message.answer(f"❌ Не вошёл: {html.escape(str(error))}", reply_markup=CANCEL_KB)
+        return
+    await _col_finish(message, state)
+
+
+@router.message(Col.password)
+async def col_password(message: Message, state: FSMContext) -> None:
+    password = message.text or ""
+    try:
+        await message.delete()
+    except Exception:
+        pass
+    login = _logins.get(message.from_user.id)
+    if login is None:
+        await state.clear()
+        await message.answer("Вход потерялся, начни заново: /admin → Сборщик.")
+        return
+    try:
+        await login["client"].sign_in(password=password)
+    except Exception:
+        await message.answer("Пароль не подошёл, пришли ещё раз.", reply_markup=CANCEL_KB)
+        return
+    await _col_finish(message, state)
+
+
+async def _col_finish(message: Message, state: FSMContext) -> None:
+    login = _logins.pop(message.from_user.id)
+    client = login["client"]
+    try:
+        me = await client.get_me()
+        name = f"@{me.username}" if getattr(me, "username", None) else login["phone"]
+    except Exception:
+        name = login["phone"]
+    session = client.session.save()
+    try:
+        await client.disconnect()
+    except Exception:
+        pass
+    await collector.save(session, name)
+    await state.clear()
+    log.info("сборщик %s подключён из админки", name)
+    await message.answer(
+        f"✅ Сборщик <b>{html.escape(name)}</b> подключён. Теперь в итогах учитываются открытый "
+        "+888 и рыночные цены NFT.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[BACK]),
+    )
 
 
 # ------------------------------------------------------------- пак эмодзи

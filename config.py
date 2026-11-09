@@ -79,3 +79,10 @@ STAR_RUB = float(os.getenv("STAR_RUB", "1.8"))
 
 #: Сколько долларов стоит звезда — для оценки NFT-юзернеймов (TON → звёзды), как в mogbattle.
 USD_PER_STAR = float(os.getenv("USD_PER_STAR", "0.015"))
+
+#: Аккаунт-сборщик (как в mogbattle): ключи приложения с my.telegram.org.
+#: Можно не задавать здесь — админка спросит их при подключении.
+TG_API_ID = int(os.getenv("TG_API_ID", "0") or 0)
+TG_API_HASH = os.getenv("TG_API_HASH", "")
+#: Анонимный номер +888 (Fragment, ~2000 TON) — сборщик видит, если номер открыт.
+ANON_NUMBER_USD = float(os.getenv("ANON_NUMBER_USD", "2500"))

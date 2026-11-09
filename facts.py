@@ -548,7 +548,7 @@ async def nft_usernames(names: list[str]) -> list[dict]:
     return [x for x in got if x]
 
 
-def worth(g: dict | None, nft_names: list[dict]) -> dict:
+def worth(g: dict | None, nft_names: list[dict], anon: bool = False) -> dict:
     """Стоимость профиля в звёздах: подарки (NFT — оценка по редкости),
     коллекционные юзернеймы по Fragment."""
     import fragment
@@ -556,9 +556,10 @@ def worth(g: dict | None, nft_names: list[dict]) -> dict:
     usd_ton = fragment.rate()
     gifts_stars = int((g or {}).get("value") or 0)
     names_stars = int(sum(n["ton"] for n in nft_names) * usd_ton / config.USD_PER_STAR)
-    total = gifts_stars + names_stars
+    anon_stars = int(config.ANON_NUMBER_USD / config.USD_PER_STAR) if anon else 0
+    total = gifts_stars + names_stars + anon_stars
     return {
-        "gifts": gifts_stars, "names": names_stars, "total": total,
+        "gifts": gifts_stars, "names": names_stars, "anon": anon_stars, "total": total,
         "rub": int(round(total * config.STAR_RUB, -1)),
         "usd": int(round(total * config.USD_PER_STAR)),
     }
@@ -600,7 +601,21 @@ async def build(bot: Bot, user: dict, premium: bool, photo_url: str | None) -> d
     rank_task = asyncio.create_task(db.rank_of(user_id))
     inv_task = asyncio.create_task(db.invited_count(user_id))
     old_task = asyncio.create_task(db.older_share(user_id))
-    g, prof, rank, invited, older = await asyncio.gather(gift_task, prof_task, rank_task, inv_task, old_task)
+    import collector
+
+    col_task = asyncio.create_task(collector.lookup(user_id, user.get("username")))
+    g, prof, rank, invited, older, seen = await asyncio.gather(
+        gift_task, prof_task, rank_task, inv_task, old_task, col_task
+    )
+    # Сборщик видит рынок: NFT по выставленной цене/флору вместо оценки по
+    # редкости, и открытый номер +888.
+    if g and seen.get("nft_value"):
+        g["value_nft"] = seen["nft_value"]
+        g["value"] = int(g.get("value_regular") or 0) + seen["nft_value"]
+        g["nft"] = max(int(g.get("nft") or 0), int(seen.get("nft") or 0))
+        if seen.get("rare"):
+            g["rare"] = seen["rare"]
+        g["market"] = True
 
     rating = prof.get("rating")
     await db.save_snapshot(
@@ -639,7 +654,8 @@ async def build(bot: Bot, user: dict, premium: bool, photo_url: str | None) -> d
         "prediction": prediction(user_id),
         "fun": fun_stats(user_id),
         "nft_names": nft_names,
-        "worth": worth(g, nft_names),
+        "anon": bool(seen.get("anon")),
+        "worth": worth(g, nft_names, bool(seen.get("anon"))),
         "at": int(time.time()),
     }
 

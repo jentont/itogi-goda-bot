@@ -795,8 +795,9 @@
             ["018", `Подарков в профиле: ${fmt(g.now)}`, w.gifts ? `≈ ${fmt(w.gifts)} <i class="st">★</i>` : "—"],
             g.nft ? ["010", `NFT-подарков: ${fmt(g.nft)}`, g.rare && g.rare.name ? `${esc(g.rare.name)} · ${String(g.rare.pct).replace(".", ",")}%` : `≈ ${fmt(g.value_nft || 0)} <i class="st">★</i>`] : null,
             names ? ["028", `NFT-юзернейм: ${names}`, `≈ ${fmt(w.names)} <i class="st">★</i>`] : null,
+            d.anon ? ["013", "Анонимный номер +888", `≈ ${fmt(w.anon)} <i class="st">★</i>`] : null,
           ])}
-          <div class="cap gift-note">NFT — оценка по редкости, юзернеймы — по продажам на Fragment. Скрытые подарки Telegram ботам не показывает</div></div>`,
+          <div class="cap gift-note">${g.market ? "NFT — по ценам маркета Telegram" : "NFT — оценка по редкости"}, юзернеймы — по продажам на Fragment. Скрытые подарки Telegram ботам не показывает</div></div>`,
       });
 
       const top = g.top;
