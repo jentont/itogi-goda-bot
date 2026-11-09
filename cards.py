@@ -803,38 +803,76 @@ def about_picture(out: Path) -> Path:
     return out
 
 
-def avatar(out: Path) -> Path:
-    """Аватарка бота 640×640. Telegram режет в круг — всё важное в центре."""
+#: Варианты аватарки бота. Telegram режет картинку в круг — всё важное в центре.
+AVATARS = {
+    # Классика: синий Telegram, праздничная уточка, золотой год.
+    "party": {"bg": (42, 125, 240), "duck": "039", "deco": "snow", "year": GOLD, "stroke": (30, 70, 170)},
+    # Уточка в очках на фиолетовом, гирлянда дугой сверху.
+    "cool": {"bg": (42, 125, 240), "duck": "010", "deco": "garland", "year": (255, 255, 255), "stroke": (24, 72, 170)},
+    # Тот же «в очках», но золотой год — на выбор.
+    "cool_gold": {"bg": (42, 125, 240), "duck": "010", "deco": "garland", "year": GOLD, "stroke": (24, 72, 170)},
+    # Ночной: тёмно-синий, уточка с сердечками, звёзды.
+    "night": {"bg": (36, 46, 120), "duck": "024", "deco": "stars", "year": GOLD, "stroke": (20, 25, 80)},
+    # Розовый с шариками: уточка-богач с подарками.
+    "gifts": {"bg": (226, 70, 140), "duck": "018", "deco": "baubles", "year": (255, 255, 255), "stroke": (160, 30, 90)},
+}
+
+
+def avatar(out: Path, variant: str = "cool") -> Path:
+    """Аватарка бота 640×640 в выбранном варианте."""
+    v = AVATARS[variant]
     S = 640
-    rnd = random.Random("avatar-1")
-    img = Image.new("RGBA", (S, S), (42, 125, 240, 255))
-    ov = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    d = ImageDraw.Draw(ov)
-    # Мягкий круг-сцена и снежинки по краю круга.
-    d.ellipse((70, 60, 570, 560), fill=(255, 255, 255, 34))
-    for _ in range(9):
+    rnd = random.Random(f"avatar-{variant}")
+    img = Image.new("RGBA", (S, S), v["bg"] + (255,))
+    K = _Big.K
+    big = Image.new("RGBA", (S * K, S * K), (0, 0, 0, 0))
+    bd = _Big(big)
+    # Сцена под уточкой: ровный светлый круг с тенью-ободком.
+    bd.ellipse((70, 66, 570, 566), fill=(0, 0, 0, 26))
+    bd.ellipse((70, 58, 570, 558), fill=(255, 255, 255, 36))
+    if v["deco"] == "garland":
+        k = 0
+        pts = [(80 + 480 * t / 60, 120 - 70 * math.sin(math.pi * t / 60)) for t in range(61)]
+        bd.line(pts, fill=(25, 35, 45, 230), width=3)
+        for t in range(3, 60, 7):
+            bx, by = pts[t]
+            c = BULB_COLORS[k % len(BULB_COLORS)]
+            k += 1
+            bd.ellipse((bx - 15, by - 2, bx + 15, by + 32), fill=c + (70,))
+            bd.rounded_rectangle((bx - 4.5, by - 3, bx + 4.5, by + 6), 2, fill=(85, 95, 105, 255))
+            bd.ellipse((bx - 7.5, by + 3, bx + 7.5, by + 25), fill=tuple(int(x * 0.7) for x in c) + (255,))
+            bd.ellipse((bx - 7, by + 3, bx + 6, by + 22), fill=c + (255,))
+            bd.ellipse((bx - 4.5, by + 6, bx - 0.5, by + 13), fill=(255, 255, 255, 200))
+    if v["deco"] == "baubles":
+        for x, y, r, c in ((150, 150, 26, BULB_COLORS[1]), (500, 170, 22, BULB_COLORS[3]), (440, 110, 16, BULB_COLORS[2])):
+            bd.line((x, 0, x, y - r), fill=(255, 255, 255, 200), width=2)
+            bd.rounded_rectangle((x - 6.5, y - r - 8, x + 6.5, y - r + 3), 2.5, fill=(214, 160, 50, 255))
+            _sphere(bd, x, y, r, c)
+    n_stars = 22 if v["deco"] == "stars" else 12
+    for _ in range(n_stars):
         ang = rnd.uniform(0, math.tau)
-        rad = rnd.uniform(230, 280)
+        rad = rnd.uniform(160, 285)
+        _star(bd, S / 2 + math.cos(ang) * rad, S / 2 + math.sin(ang) * rad, rnd.uniform(4, 9), 230, rnd.choice(FLAKE_COLORS))
+    layer = big.resize((S, S), Image.LANCZOS)
+    for _ in range(9 if v["deco"] in ("snow", "stars") else 5):
+        ang = rnd.uniform(0, math.tau)
+        rad = rnd.uniform(230, 285)
         x, y = S / 2 + math.cos(ang) * rad, S / 2 + math.sin(ang) * rad
         sp = _tinted(_flake_sprite(rnd.choice((22, 28, 34)), rnd.randrange(3)), rnd.choice(FLAKE_COLORS))
-        ov.alpha_composite(sp, (int(x - sp.width / 2), int(y - sp.height / 2)))
-    for _ in range(12):
-        ang = rnd.uniform(0, math.tau)
-        rad = rnd.uniform(150, 280)
-        _star(d, S / 2 + math.cos(ang) * rad, S / 2 + math.sin(ang) * rad, rnd.uniform(4, 8), 220, rnd.choice(FLAKE_COLORS))
-    img.alpha_composite(ov)
-    duck = _icon("039", 400)
-    img.alpha_composite(_shadow(duck, dy=12, blur=12, strength=0.4), (112, 70))
-    img.alpha_composite(duck, (112, 70))
-    # Год золотом снизу, с тенью.
+        layer.alpha_composite(sp, (int(x - sp.width / 2), int(y - sp.height / 2)))
+    img.alpha_composite(_shadow(layer, dy=5, blur=5, strength=0.3))
+    img.alpha_composite(layer)
+    duck = _icon(v["duck"], 400)
+    img.alpha_composite(_shadow(duck, dy=12, blur=12, strength=0.4), (120, 62))
+    img.alpha_composite(duck, (120, 62))
     t = Image.new("RGBA", (S, S), (0, 0, 0, 0))
     td = ImageDraw.Draw(t)
     f = _font("Unbounded-Black.ttf", 92)
-    td.text((S / 2, 500), str(config.YEAR), font=f, fill=GOLD, anchor="mm", stroke_width=6, stroke_fill=(30, 70, 170))
+    td.text((S / 2, 500), str(config.YEAR), font=f, fill=v["year"], anchor="mm", stroke_width=6, stroke_fill=v["stroke"])
     img.alpha_composite(_shadow(t, dy=6, blur=6, strength=0.35))
     img.alpha_composite(t)
     sl = Image.new("RGBA", (S, S), (0, 0, 0, 0))
-    _Sparkler(430, 150, count=40, spread=90, seed=5).draw(ImageDraw.Draw(sl), FRAMES // 3)
+    _Sparkler(440, 150, count=40, spread=90, seed=5).draw(ImageDraw.Draw(sl), FRAMES // 3)
     img.alpha_composite(sl)
     img.convert("RGB").save(out, quality=95)
     return out
