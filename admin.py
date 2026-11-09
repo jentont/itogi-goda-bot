@@ -463,12 +463,18 @@ async def col_go(call: CallbackQuery, state: FSMContext) -> None:
 
 @router.message(Col.keys)
 async def col_keys(message: Message, state: FSMContext) -> None:
-    parts = (message.text or "").split()
+    # Понимаем любой вид: «123 abc…», «API_ID = 123 / API_HASH = 'abc…'», в две строки.
+    import re
+
+    text = message.text or ""
+    found_hash = re.search(r"(?<![0-9a-fA-F])[0-9a-fA-F]{32}(?![0-9a-fA-F])", text)
+    found_id = re.search(r"(?<![0-9a-fA-F])\d{4,12}(?![0-9a-fA-F])", text.replace(found_hash.group(0), " ") if found_hash else text)
+    parts = [found_id.group(0), found_hash.group(0).lower()] if found_id and found_hash else []
     try:
         await message.delete()
     except Exception:
         pass
-    if len(parts) != 2 or not parts[0].isdigit() or len(parts[1]) < 20:
+    if len(parts) != 2:
         await message.answer("Не похоже на api_id и api_hash. Пришли два значения через пробел.", reply_markup=CANCEL_KB)
         return
     await db.set_setting(collector.KEY_API_ID, parts[0])
