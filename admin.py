@@ -441,10 +441,19 @@ async def col_go(call: CallbackQuery, state: FSMContext) -> None:
     if not api_id or not api_hash:
         await state.set_state(Col.keys)
         await call.message.answer(
-            "1️⃣ Нужны ключи приложения: зайди на <b>my.telegram.org</b> → API development tools "
-            "и пришли сюда <b>api_id</b> и <b>api_hash</b> через пробел.\n\n"
-            "Например: <code>1234567 0123456789abcdef0123456789abcdef</code>",
-            reply_markup=CANCEL_KB,
+            "1️⃣ <b>Ключи приложения</b> — это один раз, в .env ничего вписывать не надо.\n\n"
+            "1. Жми кнопку ниже и войди номером <b>аккаунта-сборщика</b> "
+            "(код придёт в Telegram).\n"
+            "2. Открой <b>API development tools</b>. Если просит создать приложение — впиши "
+            "любое название, например <code>itogi</code>, и сохрани.\n"
+            "3. Скопируй <b>App api_id</b> и <b>App api_hash</b> и пришли сюда через пробел.\n\n"
+            "Например: <code>1234567 0123456789abcdef0123456789abcdef</code>\n"
+            "Сообщение с ключами я сразу удалю.",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="🔑 Открыть my.telegram.org", url="https://my.telegram.org/apps")],
+                [B("✖️ Отмена", "a:colx")],
+            ]),
+            disable_web_page_preview=True,
         )
         return
     await state.set_state(Col.phone)
