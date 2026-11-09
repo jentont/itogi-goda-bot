@@ -12,6 +12,7 @@ from aiogram.enums import ChatType
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import (
     CallbackQuery,
+    ChatJoinRequest,
     ChosenInlineResult,
     FSInputFile,
     InlineKeyboardButton,
@@ -232,3 +233,16 @@ async def chosen(result: ChosenInlineResult, bot: Bot) -> None:
         )
     except Exception as error:
         log.info("подпись инлайн-карточки не обновить: %s", error)
+
+
+@router.chat_join_request()
+async def join_request(request: ChatJoinRequest, bot: Bot) -> None:
+    """Заявки на вступление бот принимает сам — в любом чате и канале, где он
+    админ с правом «Добавление участников». Человеку не нужно ждать админа,
+    а проверка подписки на спонсора сразу видит его участником."""
+    try:
+        await request.approve()
+    except Exception as error:
+        log.info("заявку %s в %s не принять: %s", request.from_user.id, request.chat.id, error)
+        return
+    sponsors.forget(request.from_user.id)
