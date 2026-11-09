@@ -649,19 +649,63 @@ async def _col_finish(message: Message, state: FSMContext) -> None:
 async def pack_screen(call: CallbackQuery, bot: Bot) -> None:
     me = await bot.me()
     name = await db.get_setting("emoji_pack") or config.EMOJI_PACK or emoji.pack_name(me.username)
+    packs = await emoji.icon_packs()
+    wanted = [e for _, e in emoji.ICON_ITEMS]
+    have = [e for e in wanted if e in emoji.ICONS]
+    miss = [e for e in wanted if e not in emoji.ICONS]
     text = (
-        "🦆 <b>Пак премиум-эмодзи</b>\n\n"
-        f"{html.escape(emoji.status())}\n\n"
-        f"Ссылка: https://t.me/addemoji/{name}\n\n"
-        "«Собрать» — бот создаст свой пак из уточек (владелец — ты). "
-        "После этого уточки появятся на кнопках и в текстах.\n\n"
+        "🦆 <b>Премиум-эмодзи</b>\n\n"
+        "<b>Иконки кнопок</b> — из готовых паков: "
+        + ", ".join(f"<a href='https://t.me/addemoji/{p}'>{html.escape(p)}</a>" for p in packs)
+        + f"\nНа кнопках есть иконки: {' '.join(have) or '—'}"
+        + (f"\nНет в паке (будет уточка или обычный эмодзи): {' '.join(miss)}" if miss else "")
+        + "\n\n<b>Уточки в тексте</b> — свой пак: "
+        f"{html.escape(emoji.status())}\nhttps://t.me/addemoji/{name}\n\n"
         "⚠️ Telegram показывает премиум-эмодзи у ботов только если у бота есть "
         "купленный на Fragment юзернейм. Без него бот сам откатится на обычные эмодзи."
     )
     await _edit(call, text, InlineKeyboardMarkup(inline_keyboard=[
-        [B("🦆 Собрать пак", "a:mk"), B("🔄 Перечитать", "a:rl")],
+        [B("🔗 Пак иконок по ссылке", "a:ipk"), B("🔄 Перечитать", "a:rl")],
+        [B("🦆 Собрать пак уточек", "a:mk")],
         BACK,
     ]))
+
+
+class IconPack(StatesGroup):
+    link = State()
+
+
+@router.callback_query(F.data == "a:ipk")
+async def icon_pack_ask(call: CallbackQuery, state: FSMContext) -> None:
+    await call.answer()
+    await state.set_state(IconPack.link)
+    await call.message.answer(
+        "Пришли ссылки на паки эмодзи для кнопок, например <code>https://t.me/addemoji/tgiosicons</code>.\n"
+        "Можно несколько через пробел — первый главнее.",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[B("✖️ Отмена", "a:pack")]]),
+        disable_web_page_preview=True,
+    )
+
+
+@router.message(IconPack.link)
+async def icon_pack_set(message: Message, state: FSMContext, bot: Bot) -> None:
+    names = re.findall(r"(?:addemoji/|^|\s)([A-Za-z0-9_]{5,64})(?=\s|$)", message.text or "")
+    names = [n for n in names if n.lower() not in ("https", "addemoji")]
+    if not names:
+        await message.answer("Не вижу ссылок вида t.me/addemoji/ИМЯ — пришли ещё раз.")
+        return
+    count = await emoji.load_icons(bot, names)
+    if not count:
+        await message.answer("Эти паки не прочитались — проверь ссылки.")
+        return
+    await db.set_setting("icon_packs", ",".join(names))
+    await state.clear()
+    wanted = [e for _, e in emoji.ICON_ITEMS]
+    have = [e for e in wanted if e in emoji.ICONS]
+    await message.answer(
+        f"✅ Иконки кнопок теперь из: {', '.join(names)}\nПокрыто: {' '.join(have) or '—'}",
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=[[B("⬅️ Назад", "a:pack")]]),
+    )
 
 
 def _tgs_for_emoji(path) -> bytes:
@@ -699,17 +743,16 @@ async def make_pack(event, bot: Bot) -> None:
         await event.answer()
     me = await bot.me()
     name = emoji.pack_name(me.username)
-    icons = emoji.icons_name(me.username)
     # Уже собирается или Telegram велел ждать — не шлём новых запросов
     # (каждый лишний продлевает ограничение), только говорим, сколько осталось.
     left = await pack.wait_left()
-    if pack.busy(name) or pack.busy(icons) or left:
+    if pack.busy(name) or left:
         mins = left // 60 + 1 if left else None
         await reply.answer(
             "⏳ Пак уже собирается" + (f" — Telegram разрешит через ~{mins} мин" if mins else "")
             + ". Пришлю ссылки сам, как будет готово. Нажимать ничего не нужно.")
         return
-    status = await reply.answer(f"🦆 Собираю паки: {len(emoji.PACK_ITEMS)} уточек и {len(emoji.ICON_ITEMS)} иконок…")
+    status = await reply.answer(f"🦆 Собираю пак из {len(emoji.PACK_ITEMS)} уточек…")
 
     async def notify(text: str) -> None:
         try:
@@ -722,14 +765,11 @@ async def make_pack(event, bot: Bot) -> None:
             count = await pack.ensure(bot, name, user.id, notify)
             await db.set_setting("emoji_pack", name)
             await emoji.load(bot, name)
-            await pack.ensure(bot, icons, user.id, notify, icons=True)
-            await emoji.load_icons(bot, icons)
         except Exception as error:
             await notify(f"❌ Пак не собрался: {html.escape(str(error))}\n\n"
                          "Чтобы бот мог создать пак, напиши ему /start со своего аккаунта.")
             return
-        await notify(f"✅ Готово, {count} уточек:\nhttps://t.me/addemoji/{name}\n"
-                     f"Иконки кнопок:\nhttps://t.me/addemoji/{icons}")
+        await notify(f"✅ Готово, {count} уточек:\nhttps://t.me/addemoji/{name}")
 
     # В фоне: ожидание Telegram может длиться минуты, админка не должна висеть.
     asyncio.create_task(run())
@@ -740,4 +780,5 @@ async def pack_reload(call: CallbackQuery, bot: Bot) -> None:
     me = await bot.me()
     name = await db.get_setting("emoji_pack") or config.EMOJI_PACK or emoji.pack_name(me.username)
     await emoji.load(bot, name)
+    await emoji.load_icons(bot, await emoji.icon_packs())
     await pack_screen(call, bot)

@@ -109,20 +109,41 @@ def icons_name(bot_username: str) -> str:
     return f"itogi_icons_by_{bot_username}"
 
 
-async def load_icons(bot: Any, name: str) -> int:
-    """Прочитать пак белых иконок. Вернёт, сколько иконок подключено."""
-    try:
-        got = await bot.get_sticker_set(name)
-    except Exception as error:
-        log.info("пак иконок «%s» не прочитать: %s", name, error)
-        return 0
+async def load_icons(bot: Any, names: list[str] | str) -> int:
+    """Подключить готовые паки иконок для кнопок (например tgiosicons).
+
+    Свой пак не нужен: бот ставит на кнопку custom emoji из любого
+    публичного пака — по эмодзи, к которому привязана иконка. Первый пак в
+    списке главнее. Вернёт, сколько разных эмодзи покрыто.
+    """
+    if isinstance(names, str):
+        names = [names]
+    found: dict[str, str] = {}
+    for name in names:
+        try:
+            got = await bot.get_sticker_set(name)
+        except Exception as error:
+            log.info("пак иконок «%s» не прочитать: %s", name, error)
+            continue
+        for one in got.stickers or []:
+            if one.custom_emoji_id and one.emoji:
+                for form in _forms(one.emoji):
+                    found.setdefault(form, one.custom_emoji_id)
+        log.info("пак иконок «%s»: %s шт.", name, len(got.stickers or []))
     ICONS.clear()
-    for one in got.stickers or []:
-        if one.custom_emoji_id and one.emoji:
-            for form in _forms(one.emoji):
-                ICONS.setdefault(form, one.custom_emoji_id)
-    log.info("пак иконок «%s»: %s шт.", name, len(got.stickers or []))
-    return len(got.stickers or [])
+    ICONS.update(found)
+    return len(found)
+
+
+async def icon_packs() -> list[str]:
+    """Какие паки иконок подключены: из админки, иначе из .env (ICON_PACKS)."""
+    import config
+    import db
+
+    raw = await db.get_setting("icon_packs")
+    if raw:
+        return [x for x in raw.split(",") if x]
+    return list(config.ICON_PACKS)
 
 
 async def load(bot: Any, name: str) -> str:

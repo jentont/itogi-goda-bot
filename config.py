@@ -75,6 +75,9 @@ FONTS = ASSETS / "fonts"
 TGS_DIR = ASSETS / "tgs"
 #: Белые иконки кнопок (tools/icons.py) — отдельный пак, перекрашивается под тему.
 ICONS_DIR = ASSETS / "icons"
+#: Готовые паки иконок для кнопок (имена из t.me/addemoji/ИМЯ), через запятую.
+#: Свой пак создавать не нужно: бот берёт эмодзи из любого публичного пака.
+ICON_PACKS = [x.strip() for x in os.getenv("ICON_PACKS", "tgiosicons").split(",") if x.strip()]
 
 #: Примерная цена одной звезды в рублях — для «коллекция стоит ≈ N ₽».
 STAR_RUB = float(os.getenv("STAR_RUB", "1.8"))

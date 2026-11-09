@@ -35,26 +35,16 @@ async def _auto_pack(bot: Bot, name: str) -> None:
         logging.info("пак эмодзи готов: %s шт. — %s", count, await emoji.load(bot, name))
     except Exception as error:
         logging.warning("пак эмодзи не собрать автоматически: %s (можно в /admin → Собрать пак)", error)
-    me = await bot.me()
-    icons = emoji.icons_name(me.username)
-    try:
-        await pack.ensure(bot, icons, config.ADMIN_IDS[0], icons=True)
-        await emoji.load_icons(bot, icons)
-    except Exception as error:
-        logging.warning("пак иконок не собрать автоматически: %s", error)
-    # Сообщить админу один раз, что паки готовы, — со ссылками.
-    if emoji.PACK and await db.get_setting("packs_announced") != name + icons:
+    # Сообщить админу один раз, что пак уточек готов, — со ссылкой.
+    if emoji.PACK and await db.get_setting("packs_announced") != name:
         try:
             await bot.send_message(
-                config.ADMIN_IDS[0],
-                "✅ Паки эмодзи готовы:\n"
-                f"🦆 Уточки — https://t.me/addemoji/{name}\n"
-                f"⭐ Иконки кнопок — https://t.me/addemoji/{icons}",
+                config.ADMIN_IDS[0], f"✅ Пак уточек готов: https://t.me/addemoji/{name}",
                 disable_web_page_preview=True,
             )
-            await db.set_setting("packs_announced", name + icons)
+            await db.set_setting("packs_announced", name)
         except Exception as error:
-            logging.debug("не сообщить о паках: %s", error)
+            logging.debug("не сообщить о паке: %s", error)
 
 
 async def main() -> None:
@@ -75,7 +65,8 @@ async def main() -> None:
     emoji.register(bot)
     pack_name = await db.get_setting("emoji_pack") or config.EMOJI_PACK or emoji.pack_name(me.username)
     await emoji.load(bot, pack_name)
-    await emoji.load_icons(bot, emoji.icons_name(me.username))
+    # Иконки кнопок — из готовых публичных паков (по умолчанию tgiosicons).
+    await emoji.load_icons(bot, await emoji.icon_packs())
     # Пака нет или он неполный — бот собирает его сам, в фоне (владелец — первый админ).
     if config.ADMIN_IDS and pack_name == emoji.pack_name(me.username):
         asyncio.create_task(_auto_pack(bot, pack_name))
