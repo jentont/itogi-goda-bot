@@ -148,8 +148,24 @@ def caption(data: dict | None) -> str:
         f"🦆 <b>Мой {year} в Telegram</b>",
         f"🏆 <b>{html.escape(v['title'])}</b> — <i>{html.escape(v['why'])}</i>",
     ]
+    # Цифры одной строкой-цитатой: глаз цепляется, а на рекламу не похоже.
+    nums = []
+    a = data.get("age") or {}
+    g = data.get("gifts") or {}
+    r = data.get("rating") or {}
+    if a.get("days"):
+        nums.append(f"📅 <b>{_num(a['days'])}</b> {a.get('word', 'дней')}")
+    if g.get("now"):
+        nums.append(f"🎁 <b>{_num(g['now'])}</b>")
+    if r.get("level"):
+        nums.append(f"⭐ <b>{r['level']}</b> ур.")
+    if nums:
+        lines.append("<blockquote>" + "  ·  ".join(nums) + "</blockquote>")
+    _, fun = cards._fun_line(data)
+    if data.get("fun"):
+        lines.append(f"👀 <i>По версии уточек</i> — {html.escape(fun[:1].lower() + fun[1:])}")
     if data.get("prediction"):
-        lines.append(f"🌙 <tg-spoiler>{html.escape(data['prediction'])}</tg-spoiler>")
+        lines.append(f"🌙 {year + 1}: <tg-spoiler>{html.escape(data['prediction'])}</tg-spoiler>")
     return "\n".join(lines)
 
 
@@ -163,7 +179,7 @@ async def inline_result(bot: Bot, data: dict | None, result_id: str = "itogi") -
     """Карточка-картинка как инлайн-результат (без GIF: просто фото с подписью и кнопкой)."""
     path = await photo(data)
     user_id = (data or {}).get("user", {}).get("id")
-    digest = facts.digest(data) if data else "v5"
+    digest = (facts.digest(data) if data else "v5") + "b2"
     title = "Мои итоги года" if data else f"Итоги {config.YEAR}"
     w, h = cards.SIZES["card"]
     file_id = await _file_id(bot, user_id, digest + "p", path)

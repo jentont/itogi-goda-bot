@@ -514,6 +514,62 @@ def _base(data: dict | None, kind: str) -> tuple[Image.Image, dict]:
     return img, places
 
 
+def _badge_text(data: dict | None) -> tuple[str, str]:
+    """Что написать на золотой наклейке: самая громкая цифра человека."""
+    if not data:
+        return "?", "а у тебя?"
+    a = data.get("age") or {}
+    g = data.get("gifts") or {}
+    r = data.get("rating") or {}
+    earlier = int(a.get("earlier") or 0)
+    if earlier >= 50:
+        return f"ТОП {max(1, 100 - earlier)}%", "старожилов"
+    if int(g.get("year") or 0) >= 3:
+        return f"+{g['year']}", "подарков за год"
+    if int(g.get("nft") or 0):
+        return f"{g['nft']} NFT", "в профиле"
+    if int(r.get("level") or 0):
+        return f"LVL {r['level']}", "в Telegram"
+    return str(config.YEAR), "мой год"
+
+
+def _badge(data: dict | None, size: int = 196) -> Image.Image:
+    """Золотая круглая наклейка с цифрой, чуть повёрнутая — как стикер на открытке."""
+    k = 3  # рисуем крупнее и уменьшаем — края гладкие
+    s = size * k
+    im = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(im)
+    # Зубчатый край, как у наклейки-медали.
+    c, teeth = s / 2, 22
+    pts = []
+    for i in range(teeth * 2):
+        rr = s * (0.5 if i % 2 == 0 else 0.455)
+        ang = math.pi * i / teeth
+        pts.append((c + rr * math.cos(ang), c + rr * math.sin(ang)))
+    d.polygon(pts, fill=(255, 196, 64, 255))
+    m = int(s * 0.075)
+    d.ellipse((m, m, s - m, s - m), fill=(255, 222, 120, 255), outline=(255, 244, 200, 255), width=k * 3)
+    d.arc((m + k * 9, m + k * 9, s - m - k * 9, s - m - k * 9), 200, 290, fill=(255, 250, 225, 255), width=k * 4)
+    big, small = _badge_text(data)
+    ink = (74, 48, 6, 255)
+    bf = _fit(d, big, "Unbounded-Black.ttf", int(s * 0.25), int(s * 0.70))
+    d.text((c, c - s * 0.045), big, font=bf, fill=ink, anchor="mm")
+    sf = _fit(d, small, "Manrope-Bold.ttf", int(s * 0.092), int(s * 0.60))
+    d.text((c, c + s * 0.15), small, font=sf, fill=ink, anchor="mm")
+    im = im.resize((size, size), Image.LANCZOS)
+    return im.rotate(-12, resample=Image.BICUBIC, expand=True)
+
+
+def _fun_line(data: dict | None) -> tuple[str, str]:
+    """Одна цифра «по версии уточек» для подвала: (код уточки, текст)."""
+    if not data or not data.get("fun"):
+        return "039", "У каждого свой итог года — а какой у тебя?"
+    uid = int(data.get("user", {}).get("id") or 0)
+    fun = data["fun"]
+    f = fun[uid % min(len(fun), 3)]  # игнор, быстрый ответ или «ахахах» — самые смешные
+    return f["sticker"], f"{f['label']}: {f['value']} {f['unit']}"
+
+
 def _banner(data: dict | None) -> tuple[Image.Image, dict]:
     """Инлайн-баннер 16:9 на ровном фоне: слева уточка, справа итоги."""
     w, h = SIZES["photo"]
@@ -539,14 +595,14 @@ def _banner(data: dict | None) -> tuple[Image.Image, dict]:
     pill = f"ИТОГИ {config.YEAR}"
     pf = _font("Unbounded-Bold.ttf", 26)
     pw = d.textlength(pill, font=pf) + 56
-    py = 84 if "garland" in used else 64  # под гирляндой плашку чуть ниже
+    py = 74 if "garland" in used else 54  # под гирляндой плашку чуть ниже
     _rounded(d, (x0, py, x0 + pw, py + 50), 25, (255, 255, 255, 46), (255, 255, 255, 90))
     d.text((x0 + pw / 2, py + 25), pill, font=pf, fill="white", anchor="mm")
-    foot_y = 616 if "drift" in used else 628
+    foot_y = 548
 
     name = (data or {}).get("user", {}).get("name") or f"Мой {config.YEAR} в Telegram"
     nf = _fit(d, name, "Unbounded-Black.ttf", 64, right - x0)
-    d.text((x0, 184), name, font=nf, fill="white", anchor="lm")
+    d.text((x0, 168), name, font=nf, fill="white", anchor="lm")
 
     if data:
         v = facts.verdict(data)
@@ -555,22 +611,22 @@ def _banner(data: dict | None) -> tuple[Image.Image, dict]:
         v = None
         label, nom = "ТВОЙ ГОД В TELEGRAM", "Узнай свои итоги"
     lf = _font("Manrope-Bold.ttf", 24)
-    d.text((x0, 252), label, font=lf, fill=(255, 255, 255, 175), anchor="lm")
+    d.text((x0, 230), label, font=lf, fill=(255, 255, 255, 175), anchor="lm")
     tf = _fit(d, nom, "Unbounded-Bold.ttf", 46, right - x0)
-    d.text((x0, 302), nom, font=tf, fill=GOLD, anchor="lm")
+    d.text((x0, 278), nom, font=tf, fill=GOLD, anchor="lm")
 
     # Плашка с тремя цифрами.
     stats = _stats(data)
-    py0, py1 = 370, 570
+    py0, py1 = 326, 510
     _rounded(d, (x0 - 6, py0, right, py1), 36, (255, 255, 255, 36), (255, 255, 255, 70))
     col = (right - x0 + 6) / len(stats)
     for i, (code, num, cap) in enumerate(stats):
         cx = x0 - 6 + col * i + col / 2
-        ov.alpha_composite(_icon(code, 76), (int(cx - 38), py0 + 14))
+        ov.alpha_composite(_icon(code, 70), (int(cx - 35), py0 + 10))
         nf2 = _fit(d, num, "Unbounded-Bold.ttf", 38, int(col) - 20)
-        d.text((cx, py0 + 122), num, font=nf2, fill="white", anchor="mm")
+        d.text((cx, py0 + 112), num, font=nf2, fill="white", anchor="mm")
         cf = _fit(d, cap, "Manrope-Medium.ttf", 21, int(col) - 16)
-        d.text((cx, py0 + 162), cap, font=cf, fill=(255, 255, 255, 195), anchor="mm")
+        d.text((cx, py0 + 150), cap, font=cf, fill=(255, 255, 255, 195), anchor="mm")
         if i:
             x = x0 - 6 + col * i
             d.line((x, py0 + 30, x, py1 - 30), fill=(255, 255, 255, 50), width=2)
@@ -581,11 +637,17 @@ def _banner(data: dict | None) -> tuple[Image.Image, dict]:
     else:
         foot = "Узнай свои итоги года — жми кнопку ниже"
     ff = _fit(d, foot, "Manrope-Bold.ttf", 26, right - x0)
-    fc = (255, 255, 255, 230)
-    if "drift" in used:  # на сугробе белый текст не читается — подложка
-        tw = d.textlength(foot, font=ff)
-        _rounded(d, (x0 - 14, foot_y - 24, x0 + tw + 14, foot_y + 24), 24, bg + (235,))
-    d.text((x0, foot_y), foot, font=ff, fill=fc, anchor="lm")
+    d.text((x0, foot_y), foot, font=ff, fill=(255, 255, 255, 230), anchor="lm")
+
+    # Тёмная плашка «по версии уточек»: смешная цифра, из-за которой карточку хочется открыть.
+    code, fun = _fun_line(data)
+    cy0, cy1 = 590, 668
+    dark = tuple(int(c * 0.42) for c in bg)
+    _rounded(d, (x0 - 6, cy0, right, cy1), 26, dark + (236,), (255, 255, 255, 60))
+    ov.alpha_composite(_icon(code, 60), (x0 + 8, cy0 + 9))
+    tx = x0 + 82
+    d.text((tx, cy0 + 24), "ПО ВЕРСИИ УТОЧЕК", font=_font("Manrope-Bold.ttf", 17), fill=GOLD, anchor="lm")
+    d.text((tx, cy0 + 52), fun, font=_fit(d, fun, "Manrope-Bold.ttf", 25, right - tx - 20), fill="white", anchor="lm")
 
     img.alpha_composite(_shadow(ov, dy=5, blur=6, strength=0.28))
     img.alpha_composite(ov)
@@ -593,6 +655,7 @@ def _banner(data: dict | None) -> tuple[Image.Image, dict]:
         "duck": (dcx - duck_size // 2, dcy - duck_size // 2, duck_size),
         "spark": (dcx + duck_size * 0.30, dcy - duck_size * 0.32),
         "spark2": (dcx - duck_size * 0.36, dcy - duck_size * 0.26),
+        "badge": (_badge(data, 184), dcx + 52, dcy + 78),
     }
     return img, places
 
@@ -678,6 +741,10 @@ def _finish(base: Image.Image, places: dict, duck_code: str, seed: int, out: Pat
     duck = _icon(duck_code, ds)
     frame.alpha_composite(_shadow(duck, dy=12, blur=12, strength=0.4), (dx, dy))
     frame.alpha_composite(duck, (dx, dy))
+    if places.get("badge"):  # наклейка с цифрой — поверх уточки
+        badge, bx, by = places["badge"]
+        frame.alpha_composite(_shadow(badge, dy=8, blur=9, strength=0.45), (bx, by))
+        frame.alpha_composite(badge, (bx, by))
     sl = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     sd = ImageDraw.Draw(sl)
     _Sparkler(*places["spark"], count=46, spread=120, seed=seed + 1).draw(sd, i)
@@ -696,7 +763,7 @@ def _finish(base: Image.Image, places: dict, duck_code: str, seed: int, out: Pat
 
 def ensure_still(data: dict | None) -> Path:
     """Готовая статичная карточка из кэша или свежая. Блокирующая — звать в потоке."""
-    digest = facts.digest(data) if data else "v5"
+    digest = (facts.digest(data) if data else "v5") + "b2"  # b2 — версия рисунка баннера
     path = path_for((data or {}).get("user", {}).get("id"), digest, "photo").with_suffix(".jpg")
     if path.exists():
         return path

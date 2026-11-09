@@ -72,6 +72,17 @@ ICON_ITEMS: tuple[tuple[str, str], ...] = (
     ("key.tgs", "🔑"), ("coin.tgs", "💰"), ("star.tgs", "⭐"),
 )
 
+#: Эмодзи бота, которых в паке иконок нет → похожая иконка, которая там есть
+#: (подобрано под tgiosicons). Так иконкой из пака становится каждый эмодзи
+#: бота, а если Telegram премиум-эмодзи не пустит — останется обычный.
+ALIAS: dict[str, str] = {
+    "🦆": "🌟", "🏆": "👑", "👇": "⬇️", "🔥": "⚡", "😱": "😨", "📨": "📤", "📩": "📥",
+    "📱": "📞", "🔑": "🔓", "🕵️": "👁", "😎": "👓", "🚀": "⚡", "🟢": "✅", "⏳": "⌛",
+    "⏸": "💤", "⚠️": "❗", "✖️": "❌", "👀": "👁", "💀": "😨", "😂": "😝", "😢": "🙁",
+    "🙈": "🫥", "❄️": "✨", "🙏": "👏", "☔": "💧", "😭": "🙁", "😈": "😡",
+}
+_aliased: set[str] = set()
+
 #: Обычный эмодзи → id премиального. Заполняется из пака при старте.
 PACK: dict[str, str] = {}
 #: То же для белых иконок кнопок.
@@ -132,6 +143,14 @@ async def load_icons(bot: Any, names: list[str] | str) -> int:
                     found.setdefault(form, one.custom_emoji_id)
         log.info("пак иконок «%s»: %s шт.", name, len(got.stickers or []))
     global _pattern
+    # Чего в паке нет — берём похожую иконку по таблице ALIAS.
+    _aliased.clear()
+    for src, dst in ALIAS.items():
+        target = next((found[f] for f in _forms(dst) if f in found), None)
+        if target and not any(f in found for f in _forms(src)):
+            for form in _forms(src):
+                found[form] = target
+                _aliased.add(form)
     ICONS.clear()
     ICONS.update(found)
     _pattern = None
@@ -175,8 +194,8 @@ def icon(plain: str) -> str | None:
 
 
 def _all() -> dict[str, str]:
-    """Эмодзи для текста: уточки главнее, иконки из готовых паков — где уточки нет."""
-    return {**ICONS, **PACK}
+    """Эмодзи для текста: иконки из готового пака главнее, уточки — где иконки нет."""
+    return {**PACK, **ICONS}
 
 
 def _regex() -> re.Pattern | None:
@@ -286,7 +305,7 @@ def strip_styles(method: Any) -> bool:
 
 def strip_buttons(method: Any) -> bool:
     """Снять премиум-иконки с кнопок. Цвет (синяя/зелёная) при этом остаётся."""
-    back = {v: k for k, v in {**ICONS, **PACK}.items()}
+    back = {v: k for k, v in {**ICONS, **PACK}.items() if k not in _aliased}
     touched = False
     for button in _buttons(method):
         icon_id = getattr(button, "icon_custom_emoji_id", None)
