@@ -500,12 +500,61 @@ async def col_phone(message: Message, state: FSMContext) -> None:
         return
     _logins[message.from_user.id] = {"client": client, "phone": phone, "hash": sent.phone_code_hash}
     await state.set_state(Col.code)
-    await message.answer(
-        "2️⃣ Telegram прислал код — обычно в приложение, в чат «Telegram» этого аккаунта.\n\n"
-        "Пришли его <b>с пробелами</b>: <code>1 2 3 4 5</code>. Без пробелов Telegram заметит "
-        "код в переписке и отменит его — это его защита от мошенников.",
-        reply_markup=CANCEL_KB,
+    await message.answer(_code_text(sent), reply_markup=CODE_KB)
+
+
+#: Куда Telegram отправил код. Он сам выбирает канал, и «код не приходит»
+#: почти всегда значит, что смотрели не туда (как в mogbattle).
+WHERE_SENT = {
+    "SentCodeTypeApp": "в <b>приложение Telegram</b> — в чат «Telegram» (с синей галочкой) на том аккаунте, "
+                       "чей номер ты прислал. Не по SMS и не в этот чат",
+    "SentCodeTypeSms": "по <b>SMS</b> на этот номер",
+    "SentCodeTypeSmsWord": "по <b>SMS</b> — там будет слово, а не цифры",
+    "SentCodeTypeSmsPhrase": "по <b>SMS</b> — там будет фраза, а не цифры",
+    "SentCodeTypeFirebaseSms": "по <b>SMS</b> на этот номер",
+    "SentCodeTypeFragmentSms": "в <b>Fragment</b>: My Assets → Numbers (номер +888)",
+    "SentCodeTypeCall": "<b>звонком</b> — код продиктует робот",
+    "SentCodeTypeMissedCall": "<b>сбросом звонка</b> — код это последние цифры входящего номера",
+    "SentCodeTypeFlashCall": "<b>сбросом звонка</b> на этот номер",
+    "SentCodeTypeEmailCode": "на <b>почту</b>, привязанную к аккаунту",
+}
+
+CODE_KB = InlineKeyboardMarkup(inline_keyboard=[
+    [B("📩 Код не пришёл — прислать по SMS", "a:colsms")],
+    [B("✖️ Отмена", "a:colx")],
+])
+
+
+def _code_text(sent) -> str:
+    where = WHERE_SENT.get(type(getattr(sent, "type", None)).__name__, "способом, который выбрал Telegram")
+    return (
+        f"2️⃣ Telegram отправил код {where}.\n\n"
+        "Пришли его сюда <b>с пробелами</b>: <code>1 2 3 4 5</code>. Без пробелов Telegram заметит "
+        "код в переписке и отменит его — это его защита от мошенников.\n\n"
+        "Не пришёл за минуту — жми кнопку ниже, попрошу ещё раз по SMS."
     )
+
+
+@router.callback_query(F.data == "a:colsms")
+async def col_resend(call: CallbackQuery, state: FSMContext) -> None:
+    login = _logins.get(call.from_user.id)
+    if login is None:
+        await call.answer("Вход потерялся — начни заново", show_alert=True)
+        return
+    try:
+        sent = await login["client"].send_code_request(login["phone"], force_sms=True)
+    except Exception as error:
+        await call.answer()
+        await call.message.answer(
+            f"❌ Повторно не отправилось: {html.escape(str(error))}\n\n"
+            "Если пишет про ожидание — Telegram ограничил частые запросы кода, подожди и начни заново.",
+            reply_markup=CANCEL_KB,
+        )
+        return
+    login["hash"] = sent.phone_code_hash
+    await state.set_state(Col.code)
+    await call.answer("Запросил ещё раз")
+    await call.message.answer(_code_text(sent), reply_markup=CODE_KB)
 
 
 @router.message(Col.code)
