@@ -27,7 +27,7 @@ PUBLIC_URL = os.getenv("PUBLIC_URL", "").rstrip("/")
 
 #: Где слушает встроенный веб-сервер. Снаружи его закрывает nginx с https.
 WEB_HOST = os.getenv("WEB_HOST", "127.0.0.1")
-WEB_PORT = int(os.getenv("WEB_PORT", "8080"))
+WEB_PORT = int(os.getenv("WEB_PORT") or os.getenv("PORT") or "8080")
 
 #: Какой год подводим.
 YEAR = int(os.getenv("YEAR", "2026"))

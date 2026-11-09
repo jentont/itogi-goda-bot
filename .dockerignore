@@ -1,0 +1,9 @@
+.env
+.git
+data/
+__pycache__/
+preview/
+webapp/dev/
+webapp/stickers/
+webapp/gifts/
+tools/shots.sh
