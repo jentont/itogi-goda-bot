@@ -36,6 +36,9 @@ FRAMES = 90  # 3 секунды — ровно один цикл уточки (1
 
 SIZES = {"card": (720, 900), "story": (720, 1280), "photo": (1280, 720)}
 
+#: Юзернейм бота — водяной знак на видео (для TikTok/Reels, где ссылки не кликаются).
+BOT_USERNAME = ""
+
 #: Ровные фоны инлайн-баннера (без градиента) — выбираются случайно.
 BANNER_BGS = (
     (42, 125, 240), (118, 76, 245), (226, 70, 140), (14, 160, 150),
@@ -494,7 +497,11 @@ def _base(data: dict | None, kind: str) -> tuple[Image.Image, dict]:
             d.text((w / 2, label_y + 52 + k * 44), line, font=pf2, fill="white", anchor="mm")
 
     # Подвал.
-    foot = "Узнай свои итоги года — жми на ссылку в истории" if story else "Узнай свои итоги года — жми кнопку ниже"
+    if story:
+        # Видео уходит и в TikTok, где ссылок нет, — поэтому пишем, где искать бота.
+        foot = f"Свои итоги — в Telegram: @{BOT_USERNAME}" if BOT_USERNAME else "Узнай свои итоги года — жми на ссылку в истории"
+    else:
+        foot = "Узнай свои итоги года — жми кнопку ниже"
     ff = _font("Manrope-Medium.ttf", 22)
     d.text((w / 2, h - (44 if story else 34)), foot, font=ff, fill=(255, 255, 255, 160), anchor="mm")
 

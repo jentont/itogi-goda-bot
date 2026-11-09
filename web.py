@@ -216,7 +216,21 @@ async def api_story(request: web.Request) -> web.Response:
         return web.json_response({"error": "no_results"}, status=409)
     path = await share.card(data, "story")
     await db.mark_shared(user_id)
-    return web.json_response({"url": share.public_url(path), "link": share.bot_link(user_id)})
+    url = share.public_url(path)
+    download = url.replace("/cards/", "/dl/", 1)
+    return web.json_response({"url": url, "download": download, "link": share.bot_link(user_id)})
+
+
+async def download(request: web.Request) -> web.StreamResponse:
+    """Видео итогов файлом — для Telegram.WebApp.downloadFile (кнопка «В TikTok»)."""
+    name = request.match_info["name"]
+    path = (config.CARDS_DIR / name).resolve()
+    if path.parent != config.CARDS_DIR.resolve() or not path.is_file() or path.suffix != ".mp4":
+        raise web.HTTPNotFound()
+    resp = web.FileResponse(path)
+    resp.headers["Content-Disposition"] = f'attachment; filename="itogi-{config.YEAR}.mp4"'
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    return resp
 
 
 async def index(request: web.Request) -> web.Response:
@@ -250,4 +264,5 @@ def make_app(bot: Bot) -> web.Application:
     app.router.add_post("/api/plan", api_plan)
     app.router.add_static("/app/", config.WEBAPP_DIR)
     app.router.add_static("/cards/", config.CARDS_DIR)
+    app.router.add_get("/dl/{name}", download)
     return app

@@ -580,7 +580,7 @@ def verdict(data: dict) -> dict:
 def digest(data: dict) -> str:
     """Отпечаток того, что нарисовано на карточке, — для кэша."""
     keys = {
-        "v": 5,
+        "v": 6,
         "name": data["user"]["name"],
         "days": data["age"]["days"] // 7,
         "prem": data["premium"],

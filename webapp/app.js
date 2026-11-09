@@ -93,7 +93,7 @@
     const img = ctx.createImageData(W, H);
     // 8 позиций по кругу, точки стоят через одну
     const SPOTS = [[0.80, 0.10], [0.60, 0.20], [0.35, 0.25], [0.25, 0.60], [0.20, 0.90], [0.40, 0.80], [0.65, 0.75], [0.75, 0.40]];
-    let phase = 0, shown = 0;
+    let phase = 0, shown = 0, dirty = true;
     let from = null, to = null, mixT = 1;
     const hex = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
     const lerp = (a, b, t) => a + (b - a) * t;
@@ -134,19 +134,25 @@
     function loop(now) {
       const dt = Math.min(0.05, (now - last) / 1000 || 0);
       last = now;
-      shown += (phase - shown) * Math.min(1, dt * 2.6) + dt * 0.02; // шаг + еле заметный дрейф
-      phase += dt * 0.02;
-      if (mixT < 1) mixT = Math.min(1, mixT + dt * 1.6);
-      const t = mixT * mixT * (3 - 2 * mixT);
-      const cols = from ? [0, 1, 2, 3].map((i) => mixC(from[i], to[i], t)) : to;
-      if (cols) draw(cols, ((shown % 8) + 8) % 8);
+      // Рисуем только пока что-то меняется (шаг точек или смена цветов) —
+      // в покое фон не тратит ни кадра, это главный источник лагов на телефонах.
+      const moving = Math.abs(phase - shown) > 0.002 || mixT < 1 || dirty;
+      if (moving) {
+        shown += (phase - shown) * Math.min(1, dt * 2.6);
+        if (Math.abs(phase - shown) <= 0.002) shown = phase;
+        if (mixT < 1) mixT = Math.min(1, mixT + dt * 1.6);
+        const t = mixT * mixT * (3 - 2 * mixT);
+        const cols = from ? [0, 1, 2, 3].map((i) => mixC(from[i], to[i], t)) : to;
+        if (cols) draw(cols, ((shown % 8) + 8) % 8);
+        dirty = false;
+      }
       requestAnimationFrame(loop);
     }
     requestAnimationFrame(loop);
     return {
       set(colors) {
         const next = palette(colors);
-        if (!to) { to = next; mixT = 1; return; }
+        if (!to) { to = next; mixT = 1; dirty = true; return; }
         const t = mixT * mixT * (3 - 2 * mixT);
         from = [0, 1, 2, 3].map((i) => mixC(from ? from[i] : to[i], to[i], from ? t : 1));
         to = next; mixT = 0;
@@ -189,11 +195,16 @@
     loadJson(stickerUrl(code)).then((data) => {
       el._loading = false;
       if (!data || el._anim || !el.isConnected || el._dead) return;
+      // Маленькие иконки (в плашках, кнопках, списках) играют один раз и
+      // замирают — десятки зацикленных SVG-анимаций сразу и давали лаги.
+      // Большие уточки живут по кругу.
+      const small = el.classList.contains("ico");
       el._anim = lottie.loadAnimation({
-        container: el, renderer: "svg", loop: true, autoplay: true,
+        container: el, renderer: "svg", loop: !small, autoplay: true,
         animationData: typeof structuredClone === "function" ? structuredClone(data) : JSON.parse(JSON.stringify(data)),
         rendererSettings: { preserveAspectRatio: "xMidYMid meet", progressiveLoad: true },
       });
+      el._anim.setSubframe(false); // родные 60/30 кадров стикера, без лишней интерполяции
     });
     el._dead = false;
   }
@@ -249,7 +260,7 @@
     const c = $("#snow");
     const ctx = c.getContext("2d");
     let w, h, flakes;
-    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    const dpr = Math.min(1.5, window.devicePixelRatio || 1);
     const sprites = [];
     for (const size of [14, 20, 28]) for (let k = 0; k < 3; k++) sprites.push(flakeSprite(size * dpr, k));
     function resize() {
@@ -258,8 +269,8 @@
       c.style.width = innerWidth + "px";
       c.style.height = innerHeight + "px";
       const area = innerWidth * innerHeight;
-      const crystals = Math.round(area / 16000);
-      const dots = Math.round(area / 9000);
+      const crystals = Math.round(area / 24000);
+      const dots = Math.round(area / 14000);
       flakes = [];
       for (let i = 0; i < dots; i++) flakes.push({
         dot: true, x: Math.random() * w, y: Math.random() * h,
@@ -726,7 +737,7 @@
             <div class="compare">
               <div class="box"><b>${fmt(g.before)}</b><span>на 1 января</span></div>
               <div class="arrow">→</div>
-              <div class="box hot"><b>${fmt(g.now)}</b><span>сейчас</span></div>
+              <div class="box hot"><b>${fmt(g.now)}</b><span>сейчас в профиле</span></div>
             </div>
           </div>
           ${month}`,
@@ -777,12 +788,12 @@
           <h2>${g.value ? "Стоимость коллекции" : "Твоя коллекция"}</h2>
           ${g.value ? `<div class="value-row"><div class="value" data-count="${g.value}">0</div><span class="ico ico-lg lottie" data-sticker="010"></span></div><div class="cap">звёзд стоят обычные подарки в профиле${g.rub ? ` — это примерно <b>${fmt(g.rub)} ₽</b>` : ""}</div>` : ""}
           <div class="extra">${factList([
-            ["018", "Всего подарков", fmt(g.now)],
+            ["018", "Открытых в профиле", fmt(g.now)],
             g.kinds && ["027", "Разных видов", fmt(g.kinds)],
             ["010", "NFT-подарков", fmt(g.nft || 0)],
             ["014", "Лимитированных", fmt(g.limited || 0)],
             g.stars_year ? ["039", `Звёзд в подарках за ${d.year}`, fmt(g.stars_year)] : null,
-          ])}</div>`,
+          ])}<div class="cap gift-note">Считаем подарки, открытые в профиле: скрытые Telegram ботам не показывает</div></div>`,
       });
 
       const top = g.top;
@@ -966,7 +977,10 @@
         <div class="extra" style="margin-top:8px">
           <div class="widgets">${cells}</div>
           <div class="final-actions">
-            <button class="btn btn-gold js-story">${ic("030")}Выложить в историю</button>
+            <div class="final-row">
+              <button class="btn btn-gold js-story">${ic("030")}В историю</button>
+              <button class="btn btn-tiktok js-tiktok">${ic("028")}В TikTok</button>
+            </div>
             <button class="btn btn-white js-send">${ic("036")}Отправить друзьям</button>
             <button class="btn btn-ghost js-invite">${ic("029")}Пригласить друзей</button>
           </div>
@@ -1082,6 +1096,7 @@
       if (b.classList.contains("js-invite")) { invite(); return; }
       if (b.classList.contains("js-send")) { await sendToFriends(b); return; }
       if (b.classList.contains("js-story")) { await toStory(b); }
+      if (b.classList.contains("js-tiktok")) { await toTikTok(b); }
     });
   }
 
@@ -1156,6 +1171,39 @@
     fx.stopAll();
     show("s-loading");
     boot2();
+  }
+
+  // TikTok не даёт выложить ролик из Telegram напрямую: сохраняем вертикальное
+  // видео на телефон (в нём водяной знак с ботом) и открываем TikTok.
+  async function toTikTok(btn) {
+    haptic("light");
+    if (DEMO) { toast("В Telegram тут сохранится видео и откроется TikTok"); return; }
+    btn.disabled = true;
+    const old = btn.innerHTML;
+    btn.textContent = "Готовим видео…";
+    try {
+      const r = await api("/api/story");
+      const openTikTok = () => setTimeout(() => openLink("https://www.tiktok.com/upload"), 700);
+      if (can("8.0") && tg.downloadFile) {
+        tg.downloadFile({ url: r.download, file_name: `itogi-${DATA.year}.mp4` }, (ok) => {
+          if (!ok) return;
+          haptic("success");
+          toast(`${ic("003")}Видео сохраняется — загрузи его в TikTok`);
+          openTikTok();
+        });
+      } else {
+        openLink(r.download);
+        toast("Сохрани видео и загрузи его в TikTok");
+        openTikTok();
+      }
+    } catch (e) {
+      if (e.code === "subscribe") { relock(); return; }
+      toast("Не получилось, попробуй ещё раз");
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = old;
+      mountIn(btn);
+    }
   }
 
   async function toStory(btn) {

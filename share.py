@@ -38,6 +38,7 @@ _bot_username = ""
 def set_username(name: str) -> None:
     global _bot_username
     _bot_username = name
+    cards.BOT_USERNAME = name or ""
 
 
 def bot_link(ref: int | None = None) -> str:
