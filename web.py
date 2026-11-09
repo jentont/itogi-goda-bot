@@ -103,8 +103,13 @@ async def _enter(request: web.Request, fresh_check: bool) -> web.Response:
         language_code=tg.get("language_code"),
         is_premium=bool(tg.get("is_premium")),
     )
-    row, new = await db.touch_user(who, _ref(init))
+    # Пользоваться можно только после /start в боте: без него человека нет в
+    # базе — просим запустить бота (реф-ссылка сохраняется в кнопке).
+    if await db.get_user(who.id) is None:
+        return web.json_response({"state": "start", "link": share.bot_link(_ref(init))})
+    row, _ = await db.touch_user(who)
 
+    # Подписку проверяем при каждом входе, а не один раз: отписался — снова ОП.
     need = await sponsors.missing(bot, who.id, fresh=fresh_check)
     if need:
         return web.json_response({"state": "subscribe", "sponsors": _sponsor_view(need)})
@@ -147,7 +152,18 @@ async def _thank_inviter(bot: Bot, inviter: int, name: str) -> None:
 
 
 async def api_start(request: web.Request) -> web.Response:
-    return await _enter(request, fresh_check=False)
+    return await _enter(request, fresh_check=True)
+
+
+async def _allowed(bot: Bot, user_id: int) -> bool:
+    """Запустил бота и подписан на спонсоров — можно делиться карточками."""
+    if await db.get_user(user_id) is None:
+        return False
+    return not await sponsors.missing(bot, user_id)
+
+
+def _locked() -> web.Response:
+    return web.json_response({"error": "subscribe"}, status=403)
 
 
 async def api_check(request: web.Request) -> web.Response:
@@ -159,6 +175,8 @@ async def api_share(request: web.Request) -> web.Response:
     bot: Bot = request.app["bot"]
     init, _ = await _auth(request)
     user_id = int(init["user"]["id"])
+    if not await _allowed(bot, user_id):
+        return _locked()
     data = await db.get_results(user_id, 7 * 86400)
     if not data:
         return web.json_response({"error": "no_results"}, status=409)
@@ -179,6 +197,8 @@ async def api_plan(request: web.Request) -> web.Response:
     """Сохранить цели на следующий год (до PLAN_MAX штук)."""
     init, body = await _auth(request)
     user_id = int(init["user"]["id"])
+    if await db.get_user(user_id) is None:
+        return _locked()
     raw = body.get("goals") or []
     goals = [g for g in dict.fromkeys(raw) if isinstance(g, str) and g in facts.PLAN_KEYS][: facts.PLAN_MAX]
     await db.save_plan(user_id, config.YEAR + 1, goals)
@@ -189,6 +209,8 @@ async def api_story(request: web.Request) -> web.Response:
     """Ссылка на вертикальное видео для Telegram.WebApp.shareToStory."""
     init, _ = await _auth(request)
     user_id = int(init["user"]["id"])
+    if not await _allowed(request.app["bot"], user_id):
+        return _locked()
     data = await db.get_results(user_id, 7 * 86400)
     if not data:
         return web.json_response({"error": "no_results"}, status=409)

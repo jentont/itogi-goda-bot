@@ -133,57 +133,28 @@ def caption(data: dict | None) -> str:
     Эмодзи здесь — из пака уточек: мидлварь Premium превратит их в
     премиум-эмодзи (если у бота есть юзернейм с Fragment).
     """
+    # Коротко и по-человечески: длинная подпись с призывами «жми кнопку»
+    # антиспам-боты в чатах принимают за рекламу и ограничивают отправителя.
+    # Все цифры и так на картинке.
     year = config.YEAR
     if not data:
         return (
-            f"🦆 <b>Итоги {year} в Telegram</b>\n\n"
-            "<blockquote>😱 Раньше скольких людей ты пришёл в Telegram\n"
-            "🎁 Сколько подарков у тебя и сколько стоит коллекция\n"
-            "⚙️ Твой уровень и сколько до следующего\n"
-            f"🔥 Номинация года и 🌙 предсказание на {year + 1}</blockquote>\n\n"
-            "✨ <b>Жми кнопку — и проверь свои!</b>"
+            f"🦆 <b>Итоги {year} в Telegram</b>\n"
+            "<i>Подарки, уровень и итог года — у каждого свои</i>"
         )
-    a = data["age"]
-    facts_lines: list[str] = []
-    # Самое шокирующее — первой строкой.
-    if a.get("earlier", 0) >= 10:
-        facts_lines.append(f"😱 Я в Telegram раньше <b>{a['earlier']}%</b> всех людей")
-    facts_lines.append(f"📅 <b>{_num(a['days'])}</b> {a['word']} вместе — <i>с {a['since']}</i>")
-    g = data.get("gifts")
-    if g and g.get("now"):
-        parts = [f"🎁 <b>{g['now']}</b> {facts.plural(g['now'], 'подарок', 'подарка', 'подарков')}"]
-        if g.get("year"):
-            parts.append(f"+{g['year']} за год")
-        if g.get("rub"):
-            parts.append(f"коллекция ≈ <b>{_num(g['rub'])} ₽</b>")
-        facts_lines.append(" · ".join(parts))
-        top = g.get("top") or {}
-        if top.get("nft") and top.get("rarity"):
-            rarity = str(top["rarity"]).replace(".", ",")
-            facts_lines.append(f"🎉 NFT <i>«{html.escape(top['title'])}»</i> — такая модель у <b>{rarity}%</b>")
-    r = data.get("rating")
-    if r and r.get("level"):
-        facts_lines.append(f"⚙️ Уровень в Telegram: <b>{r['level']}</b>")
-    if data.get("premium"):
-        facts_lines.append("😎 <b>Premium</b>-легенда")
     v = facts.verdict(data)
-    nom = html.escape(v["title"])
     lines = [
-        f"🦆 <b>Мои итоги {year} в Telegram</b>",
-        "",
-        "<blockquote>" + "\n".join(facts_lines) + "</blockquote>",
-        "",
-        f"🔥 Итог года: <b><u>«{nom}»</u></b> — <i>{html.escape(v['why'])}</i>",
+        f"🦆 <b>Мой {year} в Telegram</b>",
+        f"🔥 <b>{html.escape(v['title'])}</b> — <i>{html.escape(v['why'])}</i>",
     ]
     if data.get("prediction"):
-        lines.append(f"🌙 Предсказание на {year + 1}: <tg-spoiler>{html.escape(data['prediction'])}</tg-spoiler>")
-    lines += ["", "✨ <b>А у тебя? Проверь свои итоги!</b>"]
+        lines.append(f"🌙 <tg-spoiler>{html.escape(data['prediction'])}</tg-spoiler>")
     return "\n".join(lines)
 
 
 def _markup(ref: int | None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        inline_keyboard=[[InlineKeyboardButton(text="✨ Проверить свои итоги", url=bot_link(ref))]]
+        inline_keyboard=[[InlineKeyboardButton(text="Посмотреть свои", url=bot_link(ref))]]
     )
 
 

@@ -41,6 +41,14 @@ async def main():
     from aiohttp.test_utils import TestClient, TestServer
     app = webapp.make_app(bot)
     async with TestClient(TestServer(app)) as c:
+        # Без /start в боте мини-апп не пускает
+        r = await c.post("/api/start", json={"init": sign({"id": 5, "first_name": "Ваня"})})
+        j = await r.json(); assert j["state"] == "start", j
+        # «Нажали /start» — все, кто дальше пользуется ботом
+        NS2 = __import__("types").SimpleNamespace
+        for uid in (5, 777):
+            await db.touch_user(NS2(id=uid, username=None, first_name="T", language_code="ru", is_premium=False))
+        await db.touch_user(NS2(id=888, username=None, first_name="Друг", language_code="ru", is_premium=False), 5)
         # Пригласивший
         r = await c.post("/api/start", json={"init": sign({"id": 5, "first_name": "Ваня", "is_premium": True})})
         j = await r.json(); assert j["state"] == "ready", j

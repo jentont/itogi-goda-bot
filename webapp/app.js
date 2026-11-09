@@ -880,8 +880,7 @@
           ${num
             ? `<div class="value" data-count="${f.value}" data-suffix="<small>${esc(f.unit)}</small>">0</div>`
             : `<div class="value gold">${esc(f.value)}<small>${esc(f.unit)}</small></div>`}
-          <p class="sub">${esc(m.text(num ? f.value : 0))}</p>
-          <div class="cap fun-note">${ic("001")}шуточная статистика — числа придумали уточки</div>`,
+          <p class="sub">${esc(m.text(num ? f.value : 0))}</p>`,
         spark: f.key === "fast" ? [0.82, 0.2] : null,
         enter: f.key === "ahah" ? () => fx.confetti(90) : null,
       });
@@ -1136,17 +1135,27 @@
     if (DEMO) { toast("В Telegram тут откроется выбор чата"); return; }
     if (!can("8.0")) { invite(); return; }
     btn.disabled = true;
-    const old = btn.textContent;
+    const old = btn.innerHTML;
     btn.textContent = "Готовим карточку…";
     try {
       const r = await api("/api/share");
       tg.shareMessage(r.id, (ok) => { if (ok) { haptic("success"); toast(`${ic("039")}Отправлено!`); } });
-    } catch (_) {
+    } catch (e) {
+      if (e.code === "subscribe") { relock(); return; }
       toast("Не получилось, попробуй ещё раз");
     } finally {
       btn.disabled = false;
-      btn.textContent = old;
+      btn.innerHTML = old;
+      mountIn(btn);
     }
+  }
+
+  // Отписался от спонсора или не запускал бота — заново через проверку (ОП).
+  function relock() {
+    toast("Подпишись на каналы спонсоров, чтобы делиться итогами");
+    fx.stopAll();
+    show("s-loading");
+    boot2();
   }
 
   async function toStory(btn) {
@@ -1154,7 +1163,7 @@
     if (DEMO) { toast("В Telegram тут откроется редактор истории"); return; }
     if (!can("7.8")) { toast("Обнови Telegram, чтобы выкладывать истории"); return; }
     btn.disabled = true;
-    const old = btn.textContent;
+    const old = btn.innerHTML;
     btn.textContent = "Готовим видео…";
     try {
       const r = await api("/api/story");
@@ -1162,11 +1171,13 @@
       const premium = tg.initDataUnsafe && tg.initDataUnsafe.user && tg.initDataUnsafe.user.is_premium;
       if (premium) opts.widget_link = { url: r.link, name: "Узнать свои итоги" };
       tg.shareToStory(r.url, opts);
-    } catch (_) {
+    } catch (e) {
+      if (e.code === "subscribe") { relock(); return; }
       toast("Не получилось, попробуй ещё раз");
     } finally {
       btn.disabled = false;
-      btn.textContent = old;
+      btn.innerHTML = old;
+      mountIn(btn);
     }
   }
 
@@ -1250,7 +1261,16 @@
       const r = await api("/api/start");
       // Даём уточке долететь — мгновенное мигание экрана загрузки выглядит как сбой.
       await new Promise((ok) => setTimeout(ok, Math.max(0, 900 - (Date.now() - started))));
-      if (r.state === "subscribe") {
+      if (r.state === "start") {
+        // Человек не нажимал /start — ведём в бота и закрываем мини-апп.
+        setTheme("blue");
+        $("#startBtn").onclick = () => {
+          haptic("light");
+          try { tg.openTelegramLink(r.link); } catch (_) { openLink(r.link); }
+          setTimeout(() => { try { tg.close(); } catch (_) { /* ок */ } }, 300);
+        };
+        show("s-start");
+      } else if (r.state === "subscribe") {
         setTheme("blue");
         renderSponsors(r.sponsors);
         show("s-subscribe");

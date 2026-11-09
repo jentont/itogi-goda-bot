@@ -180,7 +180,10 @@ async def inline(query: InlineQuery, bot: Bot) -> None:
     user = query.from_user
     data = None
     row = await db.get_user(user.id)
-    if row and row["passed_at"]:
+    # Личная карточка — только если человек запускал бота и сейчас подписан
+    # на спонсоров. Иначе общая карточка и кнопка «в бота» (там /start и ОП).
+    subscribed = bool(row and row["passed_at"]) and not await sponsors.missing(bot, user.id)
+    if subscribed:
         data = await db.get_results(user.id, 7 * 86400)
         if data is None:
             try:

@@ -20,10 +20,21 @@ import admin
 import config
 import db
 import emoji
+import pack
 import handlers
 import share
 import sponsors
 import web as webapp
+
+
+async def _auto_pack(bot: Bot, name: str) -> None:
+    """Собрать или дособрать пак эмодзи при запуске и сразу подключить его."""
+    try:
+        count = await pack.ensure(bot, name, config.ADMIN_IDS[0])
+        await db.set_setting("emoji_pack", name)
+        logging.info("пак эмодзи готов: %s шт. — %s", count, await emoji.load(bot, name))
+    except Exception as error:
+        logging.warning("пак эмодзи не собрать автоматически: %s (можно в /admin → Собрать пак)", error)
 
 
 async def main() -> None:
@@ -42,8 +53,11 @@ async def main() -> None:
     me = await bot.me()
     share.set_username(me.username)
     emoji.register(bot)
-    pack = await db.get_setting("emoji_pack") or config.EMOJI_PACK or emoji.pack_name(me.username)
-    await emoji.load(bot, pack)
+    pack_name = await db.get_setting("emoji_pack") or config.EMOJI_PACK or emoji.pack_name(me.username)
+    await emoji.load(bot, pack_name)
+    # Пака нет или он неполный — бот собирает его сам, в фоне (владелец — первый админ).
+    if config.ADMIN_IDS and pack_name == emoji.pack_name(me.username):
+        asyncio.create_task(_auto_pack(bot, pack_name))
 
     if config.PUBLIC_URL:
         try:

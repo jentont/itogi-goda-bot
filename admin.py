@@ -34,6 +34,7 @@ from aiogram.types import (
 import config
 import db
 import emoji
+import pack
 import sponsors
 
 log = logging.getLogger("itogi.admin")
@@ -393,10 +394,28 @@ async def pack_screen(call: CallbackQuery, bot: Bot) -> None:
 
 
 def _tgs_for_emoji(path) -> bytes:
-    """Кастомный эмодзи — максимум 3 секунды: подрезаем последний кадр."""
+    """TGS для премиум-эмодзи по правилам Telegram: холст 100×100, до 3 секунд.
+
+    Стикеры нарисованы на 512×512 — уносим все слои в прекомп и кладём его
+    одним слоем с масштабом 100/512. Картинка и анимация не меняются.
+    """
     data = json.loads(gzip.decompress(path.read_bytes()))
     fr = float(data.get("fr", 60))
-    data["op"] = min(float(data.get("op", fr * 3)), fr * 3 - 1)
+    op = min(float(data.get("op", fr * 3)), fr * 3 - 1)
+    data["op"] = op
+    w, h = int(data.get("w", 512)), int(data.get("h", 512))
+    if (w, h) != (100, 100):
+        data.setdefault("assets", []).append({"id": "__emoji_root", "layers": data["layers"]})
+        data["layers"] = [{
+            "ddd": 0, "ind": 1, "ty": 0, "nm": "emoji", "refId": "__emoji_root", "sr": 1, "ao": 0,
+            "ks": {
+                "o": {"a": 0, "k": 100}, "r": {"a": 0, "k": 0},
+                "p": {"a": 0, "k": [50, 50, 0]}, "a": {"a": 0, "k": [w / 2, h / 2, 0]},
+                "s": {"a": 0, "k": [10000 / w, 10000 / h, 100]},
+            },
+            "w": w, "h": h, "ip": 0, "op": op, "st": 0, "bm": 0,
+        }]
+        data["w"] = data["h"] = 100
     return gzip.compress(json.dumps(data, separators=(",", ":")).encode(), 9)
 
 
@@ -409,51 +428,23 @@ async def make_pack(event, bot: Bot) -> None:
         await event.answer()
     me = await bot.me()
     name = emoji.pack_name(me.username)
-    stickers = []
-    for file, plain in emoji.PACK_ITEMS:
-        path = config.TGS_DIR / file
-        if path.exists():
-            stickers.append(InputSticker(
-                sticker=BufferedInputFile(_tgs_for_emoji(path), filename=file),
-                format="animated",
-                emoji_list=[plain],
-            ))
-    status = await reply.answer(f"🦆 Собираю пак из {len(stickers)} уточек…")
-    try:
-        # Пак уже есть — просто подключаем, не пересоздаём (это и ловит флуд-контроль).
+    status = await reply.answer(f"🦆 Собираю пак из {len(emoji.PACK_ITEMS)} эмодзи…")
+
+    async def notify(text: str) -> None:
         try:
-            have = await bot.get_sticker_set(name)
-            if len(have.stickers) >= len(stickers):
-                await db.set_setting("emoji_pack", name)
-                loaded = await emoji.load(bot, name)
-                await status.edit_text(f"✅ Пак уже собран: https://t.me/addemoji/{name}\n{html.escape(loaded)}",
-                                       disable_web_page_preview=True)
-                return
-            await bot.delete_sticker_set(name)
-        except TelegramBadRequest:
+            await status.edit_text(text)
+        except Exception:
             pass
-        for attempt in range(3):
-            try:
-                await bot.create_new_sticker_set(
-                    user_id=user.id, name=name, title=f"Итоги {config.YEAR} · Уточки",
-                    stickers=stickers[:50], sticker_type="custom_emoji",
-                )
-                break
-            except TelegramRetryAfter as wait:
-                if attempt == 2:
-                    raise
-                # Telegram просит подождать — ждём сами и пробуем снова.
-                await status.edit_text(f"⏳ Telegram просит подождать {wait.retry_after} сек — "
-                                       "дособеру пак сам, ничего нажимать не нужно.")
-                await asyncio.sleep(wait.retry_after + 2)
-                await status.edit_text(f"🦆 Собираю пак из {len(stickers)} уточек…")
+
+    try:
+        count = await pack.ensure(bot, name, user.id, notify)
     except Exception as error:
         await status.edit_text(f"❌ Пак не собрался: {html.escape(str(error))}\n\n"
                                "Чтобы бот мог создать пак, напиши ему /start со своего аккаунта.")
         return
     await db.set_setting("emoji_pack", name)
     loaded = await emoji.load(bot, name)
-    await status.edit_text(f"✅ Готово: https://t.me/addemoji/{name}\n{html.escape(loaded)}",
+    await status.edit_text(f"✅ Готово, {count} эмодзи: https://t.me/addemoji/{name}\n{html.escape(loaded)}",
                            disable_web_page_preview=True)
 
 
