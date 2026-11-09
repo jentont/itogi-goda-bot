@@ -399,14 +399,21 @@ async def get_plan(user_id: int, year: int) -> list[str]:
     return json.loads(row["goals"]) if row else []
 
 
+#: Меняй, когда меняются правила подсчёта, — старые итоги в базе устареют.
+RESULTS_VER = 2
+
+
 async def get_results(user_id: int, max_age: int) -> dict | None:
     row = await _one("SELECT * FROM results WHERE user_id=?", user_id)
     if not row or time.time() - row["at"] > max_age:
         return None
-    return json.loads(row["data"])
+    data = json.loads(row["data"])
+    # Итоги, посчитанные по старым правилам оценки, не показываем — пересчитаем.
+    return data if data.get("ver") == RESULTS_VER else None
 
 
 async def put_results(user_id: int, data: dict) -> None:
+    data["ver"] = RESULTS_VER
     await _run(
         "INSERT OR REPLACE INTO results (user_id, data, at) VALUES (?,?,?)",
         user_id, json.dumps(data, ensure_ascii=False), int(time.time()),

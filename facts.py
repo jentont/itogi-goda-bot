@@ -290,10 +290,15 @@ async def _gift_prices(bot: Bot) -> dict[str, tuple[int, int]]:
 
 
 #: Оценка NFT как в mogbattle: цена × (1 + RARITY_BOOST × редкость самого
-#: редкого признака). Признак у 200‰ — обычный (редкость 0), у 1‰ — редчайший (1).
-COMMON_PERMILLE = 200.0
-RARITY_BOOST = 5.0
-NFT_STARS = 1200  # база, если подарка уже нет в каталоге Telegram
+#: редкого признака). Почти у каждого NFT признаки встречаются в 1–3% —
+#: это норма, она уже сидит в флоре и надбавки не даёт. Дороже только
+#: по-настоящему редкое: от 10‰ (редкость 0) до 1‰ (редкость 1); чёрный
+#: фон (1,5‰) выходит ×3,5 к обычному экземпляру.
+COMMON_PERMILLE = 10.0
+RARITY_BOOST = 3.0
+#: Сколько стоит обычный NFT, если рынка не видно: дешёвые массовые NFT
+#: идут примерно по 200 ⭐ (~350 ₽). Лучше недооценить, чем обещать лишнее.
+NFT_STARS = 200
 ATTR_NAMES = (("backdrop", "фон"), ("model", "модель"), ("symbol", "узор"))
 
 
@@ -326,7 +331,9 @@ def nft_estimate(gift, prices: dict[str, tuple[int, int]]) -> int:
     дороже такого же в обычной раскраске. Первые номера тиража — дороже.
     """
     star, upgrade = prices.get(str(getattr(gift, "gift_id", "") or ""), (0, 0))
-    base = max(star + upgrade, NFT_STARS)
+    # Цена выпуска и улучшения — не рынок: массовые NFT стоят дешевле, чем
+    # в них вложено. Поэтому база — типичный флор, а не сумма трат.
+    base = NFT_STARS
     price = base * (1.0 + RARITY_BOOST * rarest(gift)[1])
     num = getattr(gift, "number", None)
     if isinstance(num, int) and 0 < num <= 100:
@@ -612,12 +619,15 @@ async def build(bot: Bot, user: dict, premium: bool, photo_url: str | None) -> d
     if g and seen.get("nft_value"):
         g["value_nft"] = seen["nft_value"]
         g["value"] = int(g.get("value_regular") or 0) + seen["nft_value"]
+        g["rub"] = int(round(g["value"] * config.STAR_RUB, -1))
         g["nft"] = max(int(g.get("nft") or 0), int(seen.get("nft") or 0))
         if seen.get("rare"):
             g["rare"] = seen["rare"]
         g["market"] = True
 
     rating = prof.get("rating")
+    if rating and int(rating.get("level") or 0) <= 0:
+        rating = None  # отрицательный/нулевой уровень на карточке не показываем
     await db.save_snapshot(
         user_id,
         rating["level"] if rating else None,
