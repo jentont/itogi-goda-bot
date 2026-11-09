@@ -420,14 +420,33 @@ async def make_pack(event, bot: Bot) -> None:
             ))
     status = await reply.answer(f"🦆 Собираю пак из {len(stickers)} уточек…")
     try:
+        # Пак уже есть — просто подключаем, не пересоздаём (это и ловит флуд-контроль).
         try:
+            have = await bot.get_sticker_set(name)
+            if len(have.stickers) >= len(stickers):
+                await db.set_setting("emoji_pack", name)
+                loaded = await emoji.load(bot, name)
+                await status.edit_text(f"✅ Пак уже собран: https://t.me/addemoji/{name}\n{html.escape(loaded)}",
+                                       disable_web_page_preview=True)
+                return
             await bot.delete_sticker_set(name)
-        except Exception:
+        except TelegramBadRequest:
             pass
-        await bot.create_new_sticker_set(
-            user_id=user.id, name=name, title=f"Итоги {config.YEAR} · Уточки",
-            stickers=stickers[:50], sticker_type="custom_emoji",
-        )
+        for attempt in range(3):
+            try:
+                await bot.create_new_sticker_set(
+                    user_id=user.id, name=name, title=f"Итоги {config.YEAR} · Уточки",
+                    stickers=stickers[:50], sticker_type="custom_emoji",
+                )
+                break
+            except TelegramRetryAfter as wait:
+                if attempt == 2:
+                    raise
+                # Telegram просит подождать — ждём сами и пробуем снова.
+                await status.edit_text(f"⏳ Telegram просит подождать {wait.retry_after} сек — "
+                                       "дособеру пак сам, ничего нажимать не нужно.")
+                await asyncio.sleep(wait.retry_after + 2)
+                await status.edit_text(f"🦆 Собираю пак из {len(stickers)} уточек…")
     except Exception as error:
         await status.edit_text(f"❌ Пак не собрался: {html.escape(str(error))}\n\n"
                                "Чтобы бот мог создать пак, напиши ему /start со своего аккаунта.")

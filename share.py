@@ -93,22 +93,34 @@ def public_url(path: Path) -> str:
 
 
 async def _file_id(bot: Bot, user_id: int | None, digest: str, path: Path) -> str | None:
-    """Залить карточку в служебный чат один раз и запомнить file_id."""
-    if not config.STORAGE_CHAT_ID:
-        return None
+    """Залить карточку в Telegram один раз и запомнить file_id.
+
+    Так инлайн-картинка открывается мгновенно и не зависит от PUBLIC_URL.
+    Куда заливаем: служебный чат (STORAGE_CHAT_ID), а если его нет или туда
+    не отправить — в личку первому админу, и сразу удаляем сообщение.
+    """
     key = user_id or 0
     known = await db.card_file(key, digest)
     if known:
         return known
-    try:
-        msg = await bot.send_photo(config.STORAGE_CHAT_ID, FSInputFile(path), disable_notification=True)
+    targets = [(config.STORAGE_CHAT_ID, False)] if config.STORAGE_CHAT_ID else []
+    targets += [(admin, True) for admin in config.ADMIN_IDS[:1]]
+    for chat_id, temporary in targets:
+        try:
+            msg = await bot.send_photo(chat_id, FSInputFile(path), disable_notification=True)
+        except Exception as error:
+            log.warning("карточку не залить в %s: %s", chat_id, error)
+            continue
         file_id = msg.photo[-1].file_id if msg.photo else None
-    except Exception as error:
-        log.warning("карточку не залить в служебный чат: %s", error)
-        return None
-    if file_id:
-        await db.put_card_file(key, digest, file_id)
-    return file_id
+        if temporary:
+            try:
+                await msg.delete()
+            except Exception:
+                pass
+        if file_id:
+            await db.put_card_file(key, digest, file_id)
+            return file_id
+    return None
 
 
 def _num(n: int) -> str:
