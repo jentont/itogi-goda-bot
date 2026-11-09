@@ -12,6 +12,7 @@ from aiogram.enums import ChatType
 from aiogram.filters import CommandObject, CommandStart
 from aiogram.types import (
     CallbackQuery,
+    ChosenInlineResult,
     FSInputFile,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -201,3 +202,33 @@ async def inline(query: InlineQuery, bot: Bot) -> None:
     if data is None:
         button = InlineQueryResultsButton(text="🦆 Проверить свои итоги", start_parameter="inline")
     await query.answer([result], cache_time=60, is_personal=True, button=button)
+
+
+@router.chosen_inline_result()
+async def chosen(result: ChosenInlineResult, bot: Bot) -> None:
+    """Человек отправил карточку в чат — сразу правим подпись от имени бота.
+
+    В самом инлайн-ответе Telegram заменяет премиум-эмодзи обычными (они
+    разрешены только в сообщениях, которые бот шлёт или правит сам). Поэтому
+    тут же редактируем подпись: прослойка emoji расставит иконки из пака, и
+    в чате карточка окажется уже с премиум-эмодзи и иконкой на кнопке.
+    Нужно включить у @BotFather: /setinlinefeedback → 100%.
+    """
+    if not result.inline_message_id:
+        return
+    data = None
+    if result.result_id != "generic":
+        data = await db.get_results(result.from_user.id, 7 * 86400)
+    ref = result.from_user.id if data else None
+    markup = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="✨ Посмотреть свои", url=share.bot_link(ref), style="primary")
+    ]])
+    try:
+        await bot.edit_message_caption(
+            inline_message_id=result.inline_message_id,
+            caption=share.caption(data),
+            parse_mode="HTML",
+            reply_markup=markup,
+        )
+    except Exception as error:
+        log.info("подпись инлайн-карточки не обновить: %s", error)
