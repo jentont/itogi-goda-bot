@@ -23,6 +23,7 @@ import gzip
 import hashlib
 import json
 import logging
+import math
 import random
 import time
 from datetime import date, datetime, timezone
@@ -268,6 +269,71 @@ async def _save_sticker(bot: Bot, sticker: Any) -> str | None:
         return None
 
 
+#: Цены подарков из каталога Telegram: id → (цена в звёздах, цена улучшения в NFT).
+_prices: dict[str, tuple[int, int]] = {}
+_prices_at = 0.0
+
+
+async def _gift_prices(bot: Bot) -> dict[str, tuple[int, int]]:
+    """Каталог подарков Telegram (getAvailableGifts), кэш на час."""
+    global _prices_at
+    if _prices and time.time() - _prices_at < 3600:
+        return _prices
+    try:
+        got = await bot.get_available_gifts()
+        for gift in got.gifts or []:
+            _prices[str(gift.id)] = (int(gift.star_count or 0), int(getattr(gift, "upgrade_star_count", 0) or 0))
+        _prices_at = time.time()
+    except Exception as error:
+        log.debug("каталог подарков не получить: %s", error)
+    return _prices
+
+
+#: Оценка NFT как в mogbattle: цена × (1 + RARITY_BOOST × редкость самого
+#: редкого признака). Признак у 200‰ — обычный (редкость 0), у 1‰ — редчайший (1).
+COMMON_PERMILLE = 200.0
+RARITY_BOOST = 5.0
+NFT_STARS = 1200  # база, если подарка уже нет в каталоге Telegram
+ATTR_NAMES = (("backdrop", "фон"), ("model", "модель"), ("symbol", "узор"))
+
+
+def _rarity_score(permille: float | None) -> float:
+    """Редкость признака 0..1 по логарифмической шкале: 1‰ и 5‰ — огромная
+    разница, 100‰ и 150‰ — никакой."""
+    if not permille or permille <= 0:
+        return 0.0
+    scale = math.log10(COMMON_PERMILLE / float(permille)) / math.log10(COMMON_PERMILLE)
+    return max(0.0, min(1.0, scale))
+
+
+def rarest(gift) -> tuple[str, float, float]:
+    """Самый редкий признак NFT: «Black (фон)», его редкость 0..1 и доля в %."""
+    best = ("", 0.0, 0.0)
+    for field, label in ATTR_NAMES:
+        attr = getattr(gift, field, None)
+        permille = getattr(attr, "rarity_per_mille", None)
+        score = _rarity_score(permille)
+        if attr is not None and score > best[1]:
+            best = (f"{getattr(attr, 'name', '')} ({label})", score, round(permille / 10, 1))
+    return best
+
+
+def nft_estimate(gift, prices: dict[str, tuple[int, int]]) -> int:
+    """Оценка NFT-подарка в звёздах.
+
+    Рыночной цены и флора Telegram ботам не отдаёт, поэтому — прикидка по
+    редкости, как в mogbattle: экземпляр с чёрным фоном (1,5‰) стоит в разы
+    дороже такого же в обычной раскраске. Первые номера тиража — дороже.
+    """
+    star, upgrade = prices.get(str(getattr(gift, "gift_id", "") or ""), (0, 0))
+    base = max(star + upgrade, NFT_STARS)
+    price = base * (1.0 + RARITY_BOOST * rarest(gift)[1])
+    num = getattr(gift, "number", None)
+    if isinstance(num, int) and 0 < num <= 100:
+        price *= 1.8 if num <= 10 else 1.3
+    return int(round(price, -1))
+
+
 async def gifts(bot: Bot, user_id: int) -> dict | None:
     """Подарки в профиле: было на 1 января, сколько пришло за год, лучший."""
     items: list[Any] = []
@@ -294,6 +360,9 @@ async def gifts(bot: Bot, user_id: int) -> dict | None:
     months = [0] * 12
     stars_year = 0
     nft = 0
+    prices = await _gift_prices(bot)
+    nft_value = 0      # оценка NFT-подарков по редкости
+    rare: tuple[str, float, float] = ("", 0.0, 0.0)  # самый редкий признак среди NFT
     value = 0          # сколько звёзд стоят обычные подарки в профиле
     limited = 0        # лимитированные (с тиражом)
     with_text = 0      # с подписью от дарителя
@@ -308,6 +377,10 @@ async def gifts(bot: Bot, user_id: int) -> dict | None:
         unique = getattr(g, "type", "") == "unique"
         if unique:
             nft += 1
+            nft_value += nft_estimate(gift, prices)
+            r_name, r_score, r_pct = rarest(gift)
+            if r_score > rare[1]:
+                rare = (r_name, r_score, r_pct)
             kinds.add(str(getattr(gift, "gift_id", "") or getattr(gift, "base_name", "")))
         else:
             value += int(getattr(gift, "star_count", 0) or 0)
@@ -346,6 +419,9 @@ async def gifts(bot: Bot, user_id: int) -> dict | None:
             top = {
                 "title": f"{gift.base_name} #{gift.number}",
                 "nft": True,
+                "estimate": nft_estimate(gift, prices),
+                "backdrop": getattr(backdrop, "name", ""),
+                "backdrop_rarity": round(getattr(backdrop, "rarity_per_mille", 0) / 10, 1) if getattr(backdrop, "rarity_per_mille", 0) else None,
                 "rarity": round(permille / 10, 1) if permille else None,
                 "stars": 0,
                 "model": getattr(model, "name", ""),
@@ -379,8 +455,11 @@ async def gifts(bot: Bot, user_id: int) -> dict | None:
     now = datetime.now(timezone.utc)
     return {
         "months": months[: now.month] if now.year == config.YEAR else months,
-        "value": value,
-        "rub": int(round(value * config.STAR_RUB, -1)),
+        "value": value + nft_value,
+        "value_regular": value,
+        "value_nft": nft_value,
+        "rare": {"name": rare[0], "pct": rare[2]} if rare[0] else None,
+        "rub": int(round((value + nft_value) * config.STAR_RUB, -1)),
         "limited": limited,
         "with_text": with_text,
         "hidden": hidden,
@@ -447,7 +526,43 @@ async def profile(bot: Bot, user_id: int) -> dict:
         out["profile"]["photos"] = int(photos.total_count or 0)
     except Exception as error:
         log.debug("аватарки %s: %s", user_id, error)
+    out["nft_names"] = await nft_usernames(names)
     return out
+
+
+async def nft_usernames(names: list[str]) -> list[dict]:
+    """Какие из юзернеймов куплены на Fragment и почём такие уходят (TON)."""
+    import fragment
+
+    async def one(name: str) -> dict | None:
+        found = await fragment.look(name)
+        if not found.collectible:
+            return None
+        return {"name": name, "ton": round(found.ton), "exact": found.exact}
+
+    try:
+        got = await asyncio.wait_for(asyncio.gather(*(one(n) for n in names[:5])), 15)
+    except Exception as error:
+        log.debug("Fragment не ответил вовремя: %s", error)
+        return []
+    return [x for x in got if x]
+
+
+def worth(g: dict | None, nft_names: list[dict], anon: bool) -> dict:
+    """Стоимость профиля в звёздах: подарки (NFT — оценка по редкости),
+    коллекционные юзернеймы по Fragment и анонимный номер +888."""
+    import fragment
+
+    usd_ton = fragment.rate()
+    gifts_stars = int((g or {}).get("value") or 0)
+    names_stars = int(sum(n["ton"] for n in nft_names) * usd_ton / config.USD_PER_STAR)
+    anon_stars = int(config.ANON_NUMBER_USD / config.USD_PER_STAR) if anon else 0
+    total = gifts_stars + names_stars + anon_stars
+    return {
+        "gifts": gifts_stars, "names": names_stars, "anon": anon_stars, "total": total,
+        "rub": int(round(total * config.STAR_RUB, -1)),
+        "usd": int(round(total * config.USD_PER_STAR)),
+    }
 
 
 ZODIAC = (
@@ -502,6 +617,10 @@ async def build(bot: Bot, user: dict, premium: bool, photo_url: str | None) -> d
 
     noms = nominations(user_id)
     name = (user.get("first_name") or "").strip() or "Уточка"
+    # +888 — только если человек сам поделился номером в мини-аппе (боту
+    # номера не видны), отметку ставит web.api_phone после проверки подписи.
+    anon = (await db.get_setting(f"anon:{user_id}")) == "1"
+    nft_names = prof.get("nft_names") or []
     return {
         "year": config.YEAR,
         "user": {
@@ -523,6 +642,9 @@ async def build(bot: Bot, user: dict, premium: bool, photo_url: str | None) -> d
         "nominations": noms,
         "prediction": prediction(user_id),
         "fun": fun_stats(user_id),
+        "nft_names": nft_names,
+        "anon": anon,
+        "worth": worth(g, nft_names, anon),
         "at": int(time.time()),
     }
 

@@ -33,6 +33,25 @@ INIT_TTL = 24 * 3600
 STICKERS_OUT = config.WEBAPP_DIR / "stickers"
 
 
+def check_signed(raw: str) -> dict | None:
+    """Проверить любые данные, подписанные Telegram для мини-аппа (как initData),
+    например ответ requestContact. Вернёт поля или None, если подпись не та."""
+    if not raw:
+        return None
+    pairs = dict(parse_qsl(raw, keep_blank_values=True))
+    got = pairs.pop("hash", "")
+    if not got:
+        return None
+    check = "\n".join(f"{k}={v}" for k, v in sorted(pairs.items()))
+    secret = hmac.new(b"WebAppData", config.BOT_TOKEN.encode(), hashlib.sha256).digest()
+    want = hmac.new(secret, check.encode(), hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(want, got):
+        return None
+    if time.time() - int(pairs.get("auth_date", "0") or 0) > INIT_TTL:
+        return None
+    return pairs
+
+
 def check_init(raw: str) -> dict | None:
     """Проверить initData. Вернёт поля с разобранным user или None."""
     if not raw:
@@ -193,6 +212,29 @@ async def api_share(request: web.Request) -> web.Response:
     return web.json_response({"id": prepared.id})
 
 
+async def api_phone(request: web.Request) -> web.Response:
+    """Человек поделился номером (WebApp.requestContact) — отметить +888.
+
+    Номер приходит подписанным Telegram: подделать чужой без токена нельзя.
+    Сам номер не храним — только отметку «анонимный номер есть».
+    """
+    init, body = await _auth(request)
+    user_id = int(init["user"]["id"])
+    signed = check_signed(str(body.get("contact") or ""))
+    if signed is None:
+        return web.json_response({"error": "bad_contact"}, status=400)
+    try:
+        contact = json.loads(signed.get("contact", "{}"))
+    except ValueError:
+        return web.json_response({"error": "bad_contact"}, status=400)
+    if int(contact.get("user_id") or 0) != user_id:
+        return web.json_response({"error": "not_yours"}, status=403)
+    digits = "".join(ch for ch in str(contact.get("phone_number") or "") if ch.isdigit())
+    anon = digits.startswith("888")
+    await db.set_setting(f"anon:{user_id}", "1" if anon else "0")
+    return web.json_response({"anon": anon})
+
+
 async def api_plan(request: web.Request) -> web.Response:
     """Сохранить цели на следующий год (до PLAN_MAX штук)."""
     init, body = await _auth(request)
@@ -262,6 +304,7 @@ def make_app(bot: Bot) -> web.Application:
     app.router.add_post("/api/share", api_share)
     app.router.add_post("/api/story", api_story)
     app.router.add_post("/api/plan", api_plan)
+    app.router.add_post("/api/phone", api_phone)
     app.router.add_static("/app/", config.WEBAPP_DIR)
     app.router.add_static("/cards/", config.CARDS_DIR)
     app.router.add_get("/dl/{name}", download)

@@ -780,20 +780,25 @@
         });
       }
 
-      // 4г. Коллекция
+      // 4г. Стоимость профиля: подарки (NFT — по редкости), NFT-юзернеймы
+      // с Fragment и анонимный номер +888 — как в mogbattle.
+      const w = d.worth || { total: g.value || 0, gifts: g.value || 0, names: 0, anon: 0, rub: g.rub || 0, usd: 0 };
+      const names = (d.nft_names || []).map((n) => "@" + esc(n.name)).join(", ");
       S.push({
         theme: "gold",
-        html: `${pill(`${ic("030")}КОЛЛЕКЦИЯ`)}
+        html: `${pill(`${ic("030")}СТОИМОСТЬ ПРОФИЛЯ`)}
           <div class="hero hero-sm"><div class="lottie" data-sticker="030"></div></div>
-          <h2>${g.value ? "Стоимость коллекции" : "Твоя коллекция"}</h2>
-          ${g.value ? `<div class="value-row"><div class="value" data-count="${g.value}">0</div><span class="ico ico-lg lottie" data-sticker="010"></span></div><div class="cap">звёзд стоят обычные подарки в профиле${g.rub ? ` — это примерно <b>${fmt(g.rub)} ₽</b>` : ""}</div>` : ""}
+          <h2>${w.total ? "Твой профиль стоит" : "Твоя коллекция"}</h2>
+          ${w.total ? `<div class="value-row"><div class="value" data-count="${w.total}">0</div><span class="ico ico-lg lottie" data-sticker="010"></span></div>
+            <div class="cap">звёзд · примерно <b>${fmt(w.rub)} ₽</b>${w.usd ? ` / $${fmt(w.usd)}` : ""}</div>` : ""}
           <div class="extra">${factList([
-            ["018", "Открытых в профиле", fmt(g.now)],
-            g.kinds && ["027", "Разных видов", fmt(g.kinds)],
-            ["010", "NFT-подарков", fmt(g.nft || 0)],
-            ["014", "Лимитированных", fmt(g.limited || 0)],
-            g.stars_year ? ["039", `Звёзд в подарках за ${d.year}`, fmt(g.stars_year)] : null,
-          ])}<div class="cap gift-note">Считаем подарки, открытые в профиле: скрытые Telegram ботам не показывает</div></div>`,
+            ["018", `Подарков в профиле: ${fmt(g.now)}`, w.gifts ? `≈ ${fmt(w.gifts)} ⭐` : "—"],
+            g.nft ? ["010", `NFT-подарков: ${fmt(g.nft)}`, g.rare && g.rare.name ? `${esc(g.rare.name)} · ${String(g.rare.pct).replace(".", ",")}%` : `≈ ${fmt(g.value_nft || 0)} ⭐`] : null,
+            names ? ["028", `NFT-юзернейм: ${names}`, `≈ ${fmt(w.names)} ⭐`] : null,
+            d.anon ? ["013", "Анонимный номер +888", `≈ ${fmt(w.anon)} ⭐`] : null,
+          ])}
+          ${d.anon ? "" : `<button class="btn btn-ghost js-anon" style="width:100%;margin-top:8px">${ic("013")}У меня номер +888</button>`}
+          <div class="cap gift-note">NFT — оценка по редкости, юзернеймы — по продажам на Fragment. Скрытые подарки Telegram ботам не показывает</div></div>`,
       });
 
       const top = g.top;
@@ -1097,6 +1102,7 @@
       if (b.classList.contains("js-send")) { await sendToFriends(b); return; }
       if (b.classList.contains("js-story")) { await toStory(b); }
       if (b.classList.contains("js-tiktok")) { await toTikTok(b); }
+      if (b.classList.contains("js-anon")) { shareAnon(b); }
     });
   }
 
@@ -1175,6 +1181,31 @@
 
   // TikTok не даёт выложить ролик из Telegram напрямую: сохраняем вертикальное
   // видео на телефон (в нём водяной знак с ботом) и открываем TikTok.
+  // Анонимный номер +888 боту не виден — человек сам делится номером через
+  // Telegram. Сервер проверяет подпись и хранит только отметку «+888 есть».
+  function shareAnon(btn) {
+    haptic("light");
+    if (DEMO) { toast("В Telegram тут попросят поделиться номером"); return; }
+    if (!can("6.9") || !tg.requestContact) { toast("Обнови Telegram, чтобы учесть номер"); return; }
+    tg.requestContact(async (ok, res) => {
+      if (!ok || !res || res.status !== "sent" || !res.response) { toast("Номер не отправлен"); return; }
+      btn.disabled = true;
+      try {
+        const r = await api("/api/phone", { contact: res.response });
+        if (!r.anon) { toast("Это не анонимный номер +888"); return; }
+        haptic("success");
+        toast(`${ic("003")}Номер +888 учтён в стоимости!`);
+        const back = idx;
+        const fresh = await api("/api/start", { fresh: true });
+        if (fresh.state === "ready") { DATA = fresh.data; startStory(); go(back); }
+      } catch (_) {
+        toast("Не получилось, попробуй ещё раз");
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  }
+
   async function toTikTok(btn) {
     haptic("light");
     if (DEMO) { toast("В Telegram тут сохранится видео и откроется TikTok"); return; }
@@ -1236,12 +1267,14 @@
       user: { id: 1, name: "Ваня", username: "vanya", photo: null },
       age: { days: 1347, hours: 32328, users_then: 780, users_now: 1120, earlier: 30, since: "мар 2023", year: 2023, title: "Бывалый", sub: "Ты видел(-а) Telegram без историй и подарков", word: "дней" },
       premium: true,
-      gifts: { now: 17, before: 3, year: 14, stars_year: 1250, nft: 2, top: null, best_month: { name: "феврале", count: 6 },
+      gifts: { now: 71, before: 40, year: 31, stars_year: 1250, nft: 10, value_nft: 41200, rare: { name: "Black (фон)", pct: 0.2 }, top: null, best_month: { name: "феврале", count: 6 },
         months: [1, 6, 0, 1, 2, 0, 1, 0, 1, 2, 0], value: 2150, limited: 4, with_text: 9, hidden: 2, kinds: 11, senders: 7,
         top_sender: { name: "Маша", count: 5 }, rub: 3870 },
       bday: { sign: "Дева", left: 308, turns: 24 },
       profile: { usernames: 1, bio: true, status: true, channel: "Ванин блог", paid: 0, colors: true, music: false, photos: 12 },
       older: 64,
+      nft_names: [{ name: "solutions", ton: 1200, exact: false }], anon: false,
+      worth: { gifts: 42660, names: 240000, anon: 0, total: 282660, rub: 508790, usd: 4240 },
       fun: [
         { key: "ignore", sticker: "023", label: "Игнорил(-а) сообщения", value: 87, unit: "дн." },
         { key: "fast", sticker: "030", label: "Самый быстрый ответ", value: "0,8", unit: "сек" },

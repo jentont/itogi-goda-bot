@@ -76,3 +76,7 @@ TGS_DIR = ASSETS / "tgs"
 
 #: Примерная цена одной звезды в рублях — для «коллекция стоит ≈ N ₽».
 STAR_RUB = float(os.getenv("STAR_RUB", "1.8"))
+
+#: Доллары за звезду и цена анонимного номера +888 (Fragment, ~2000 TON) — как в mogbattle.
+USD_PER_STAR = float(os.getenv("USD_PER_STAR", "0.015"))
+ANON_NUMBER_USD = float(os.getenv("ANON_NUMBER_USD", "2500"))

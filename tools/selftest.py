@@ -72,7 +72,7 @@ async def main():
         j = await r.json(); print("story:", j); assert j["url"].startswith("https://example.com/cards/")
         name = j["url"].rsplit("/", 1)[1]
         r = await c.get(f"/cards/{name}"); assert r.status == 200 and len(await r.read()) > 50000
-        r = await c.get("/dl/" + name); assert r.status == 200 and "attachment" in r.headers.get("Content-Disposition", "")
+        r = await c.get("/dl/" + name); body = await r.read(); assert r.status == 200 and len(body) > 50000 and "attachment" in r.headers.get("Content-Disposition", "")
         # План на следующий год: чужие ключи отбрасываются, максимум 3
         r = await c.post("/api/plan", json={"init": sign({"id": 5, "first_name": "Ваня"}),
                                            "goals": ["travel", "hack", "love", "love", "sport", "read"]})
