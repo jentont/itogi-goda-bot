@@ -545,11 +545,19 @@ async def col_resend(call: CallbackQuery, state: FSMContext) -> None:
         sent = await login["client"].send_code_request(login["phone"], force_sms=True)
     except Exception as error:
         await call.answer()
-        await call.message.answer(
-            f"❌ Повторно не отправилось: {html.escape(str(error))}\n\n"
-            "Если пишет про ожидание — Telegram ограничил частые запросы кода, подожди и начни заново.",
-            reply_markup=CANCEL_KB,
-        )
+        text = str(error)
+        if "all available options" in text or "SEND_CODE_UNAVAILABLE" in text:
+            note = (
+                "Telegram больше не даёт другого способа (SMS уже недоступна для этого номера). "
+                "<b>Первый код всё ещё действует</b> — он в приложении Telegram этого аккаунта, "
+                "в чате «Telegram» с синей галочкой. Открой аккаунт там, где он залогинен, "
+                "и пришли код сюда с пробелами — я жду."
+            )
+        elif "wait" in text.lower() or "flood" in text.lower():
+            note = "Telegram ограничил частые запросы кода — подожди немного и начни заново."
+        else:
+            note = f"Не отправилось: {html.escape(text)}"
+        await call.message.answer(f"ℹ️ {note}", reply_markup=CANCEL_KB)
         return
     login["hash"] = sent.phone_code_hash
     await state.set_state(Col.code)

@@ -46,7 +46,25 @@ async def _retry(call, notify: Notify, tries: int = 4):
             await asyncio.sleep(wait.retry_after + 2)
 
 
+#: Один пак — одна сборка за раз. Две одновременные (автосборка при запуске и
+#: кнопка в админке) удваивают запросы, и Telegram продлевает флуд-контроль.
+_locks: dict[str, asyncio.Lock] = {}
+
+
+def busy(name: str) -> bool:
+    lock = _locks.get(name)
+    return bool(lock and lock.locked())
+
+
 async def ensure(bot: Bot, name: str, owner: int, notify: Notify = None, icons: bool = False) -> int:
+    lock = _locks.setdefault(name, asyncio.Lock())
+    if lock.locked() and notify:
+        await notify("⏳ Пак уже собирается — дождись, пришлю ссылку, как будет готов.")
+    async with lock:
+        return await _ensure(bot, name, owner, notify, icons)
+
+
+async def _ensure(bot: Bot, name: str, owner: int, notify: Notify = None, icons: bool = False) -> int:
     """Довести пак до полного: создать, если нет, или добавить недостающие эмодзи.
 
     icons=True — пак белых иконок кнопок: needs_repainting, Telegram красит

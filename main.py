@@ -42,6 +42,19 @@ async def _auto_pack(bot: Bot, name: str) -> None:
         await emoji.load_icons(bot, icons)
     except Exception as error:
         logging.warning("пак иконок не собрать автоматически: %s", error)
+    # Сообщить админу один раз, что паки готовы, — со ссылками.
+    if emoji.PACK and await db.get_setting("packs_announced") != name + icons:
+        try:
+            await bot.send_message(
+                config.ADMIN_IDS[0],
+                "✅ Паки эмодзи готовы:\n"
+                f"🦆 Уточки — https://t.me/addemoji/{name}\n"
+                f"⭐ Иконки кнопок — https://t.me/addemoji/{icons}",
+                disable_web_page_preview=True,
+            )
+            await db.set_setting("packs_announced", name + icons)
+        except Exception as error:
+            logging.debug("не сообщить о паках: %s", error)
 
 
 async def main() -> None:
